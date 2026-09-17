@@ -12,14 +12,20 @@ Clone this repository and install it with the Quidra package command:
 quidra package install . --name dnn
 ```
 
-Then import it normally:
+Then import it normally. Factories validate their configuration and return
+`error` for invalid dimensions or hyperparameters:
 
 ```quidra
 import dnn
 
-dnn.LinearLayer layer = dnn.Linear(features_in = 2, features_out = 1)
-tensor<float32> samples = tensor.ones<float32>([1, 2])
-neural<float32> prediction = layer.forward(neural.track(samples))
+int | error predict()
+    dnn.LinearLayer layer = try dnn.Linear(
+        features_in = 2, features_out = 1
+    )
+    tensor<float32> samples = tensor.ones<float32>([1, 2])
+    neural<float32> prediction = layer.forward(neural.track(samples))
+    print(prediction.untrack().shape()[1])
+    return 0
 ```
 
 For development, place the repository in a directory listed by
@@ -27,20 +33,25 @@ For development, place the repository in a directory listed by
 
 ## API
 
-Each layer factory returns a class value whose parameters and state are regular
-fields, so a model is an ordinary Quidra class:
+Each layer factory returns a class value or `error`. Parameters and state remain
+regular fields, so after validation a model is still an ordinary Quidra class:
 
 | Factory | Returns | Methods |
 | --- | --- | --- |
-| `Linear(features_in, features_out, seed = 1)` | `LinearLayer` | `forward(value)` |
-| `Conv2D(channels_in, channels_out, kernel, stride = 1, padding = 0, seed = 1)` | `Conv2DLayer` | `forward(value)` |
-| `BatchNorm(features, momentum = 0.1, epsilon = 0.00001)` | `BatchNormLayer` | `forward(value)`, `infer(value)` |
-| `Dropout(rate, seed = uint64(0))` | `DropoutLayer` | `forward(value)`, `infer(value)` |
-| `SGD(rate = 0.01)` | `SGDOptimizer` | `step(&model, gradients)` |
-| `Adam(rate = 0.001, beta1 = 0.9, beta2 = 0.999, epsilon = 0.00000001)` | `AdamOptimizer` | `step(&model, gradients)` |
+| `Linear(features_in, features_out, seed = 1)` | `LinearLayer | error` | `forward(value)` |
+| `Conv2D(channels_in, channels_out, kernel, stride = 1, padding = 0, seed = 1)` | `Conv2DLayer | error` | `forward(value)` |
+| `BatchNorm(features, momentum = 0.1, epsilon = 0.00001)` | `BatchNormLayer | error` | `forward(value)`, `infer(value)` |
+| `Dropout(rate, seed = uint64(0))` | `DropoutLayer | error` | `forward(value)`, `infer(value)` |
+| `SGD(rate = 0.01)` | `SGDOptimizer | error` | `step(&model, gradients)` |
+| `Adam(rate = 0.001, beta1 = 0.9, beta2 = 0.999, epsilon = 0.00000001)` | `AdamOptimizer | error` | `step(&model, gradients)` |
+
+Validation is explicit: feature/channel/kernel sizes and strides must be
+positive, convolution padding must be nonnegative, BatchNorm momentum and Adam
+betas must be in `[0, 1)`, Dropout rate must be in `[0, 1)`, and optimizer rates
+and epsilon values must be positive.
 
 - Activations: `relu`, `sigmoid`, `tanh`, `softmax`, `gelu`
-- Losses: `mse`, `cross_entropy`, `binary_cross_entropy`
+- Losses: `mse`, `cross_entropy`, `binary_cross_entropy`, `binary_cross_entropy_with_logits`
 
 `forward` builds a differentiable `neural<T>` value. `BatchNormLayer.forward`
 updates the running statistics and `infer` is the read-only path over plain
@@ -50,28 +61,32 @@ is needed.
 
 Training uses `neural.grad`; optimizer `step` methods mutate an explicitly
 writable model. `AdamOptimizer` owns its iteration counter and moment state, so
-saving the optimizer alongside the model preserves a resumable training run.
+saving the optimizer alongside the model preserves the state required to resume
+training.
 
-`softmax` subtracts the last-axis maximum, `cross_entropy` evaluates
-log-softmax directly, and `binary_cross_entropy` keeps its probability strictly
-inside `(0, 1)`, so saturated predictions and extreme logits stay finite.
-`cross_entropy` accepts a one-hot `tensor<float32>` target with the same shape
-as its logits. `tanh` saturates instead of overflowing, and `gelu` uses the
-tanh approximation.
+`softmax` subtracts the last-axis maximum and `cross_entropy` evaluates
+log-softmax directly. `binary_cross_entropy` is for probability inputs and
+keeps them strictly inside `(0, 1)`. For raw logits, prefer
+`binary_cross_entropy_with_logits`, which uses the stable
+`max(x, 0) - x*y + log(1 + exp(-abs(x)))` form and avoids exponentiating large
+positive magnitudes. `sigmoid` is implemented through the bounded `tanh` path so
+large negative inputs do not create an overflowing exponential in the backward
+graph. `cross_entropy` accepts a one-hot `tensor<float32>` target with the same
+shape as its logits. `gelu` uses the tanh approximation.
 
 The layer factories use `float32`. Convolution expects NCHW inputs and OIHW
 weights. Normalization treats axis 1 as the feature/channel axis.
 
 `Linear` and `Conv2D` draw their weights uniformly from
-`(-1/sqrt(fan_in), +1/sqrt(fan_in))` so that the units of a layer start out
-different and can learn independently; biases start at zero. The draw comes
-from an integer generator seeded by `seed`, so the same `seed` always produces
-the same weights and a different `seed` produces a different layer. `Dropout`
-takes its own `seed` the same way. Runs are therefore reproducible by default
-rather than randomized by a hidden global source.
+`(-1/sqrt(fan_in), +1/sqrt(fan_in))`; biases start at zero. Initialization now
+uses Quidra's standard explicit `random.Generator`, so DNN does not maintain a
+second private RNG algorithm. The same `seed` reproduces the same weights and a
+different seed produces a different layer. `Dropout` keeps its explicit neural
+RNG state so it remains serializable with the model. There is no hidden global
+random source.
 
-`uniform_weights(count, bound, seed)` exposes that generator directly and
-returns a rank-1 `tensor<float32>` of `count` values in `(-bound, +bound)`;
+`uniform_weights(count, bound, seed)` exposes the seeded initializer directly
+and returns a rank-1 `tensor<float32>` of `count` values in `(-bound, +bound)`;
 reshape it to build a layer with your own initialization, or construct
 `LinearLayer` and `Conv2DLayer` from tensors you supply.
 
