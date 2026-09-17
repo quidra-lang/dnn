@@ -141,7 +141,7 @@ X tanh<X>(X value)
     return (exponent - 1.0) / (exponent + 1.0)
 
 X sigmoid<X>(X value)
-    return (tanh(value * 0.5) + 1.0) * 0.5
+    return (tanh<X>(value * 0.5) + 1.0) * 0.5
 
 X softmax<X>(X value)
     X shifted = value - neural.max_last(value)
@@ -151,7 +151,7 @@ X softmax<X>(X value)
 X gelu<X>(X value)
     X cubic = value * value * value
     X inner = (value + cubic * float32(0.044715)) * float32(0.7978845608028654)
-    return value * 0.5 * (1.0 + tanh(inner))
+    return value * 0.5 * (1.0 + tanh<X>(inner))
 
 neural<float32> mse(neural<float32> prediction, tensor<float32> target)
     neural<float32> difference = prediction - neural.track(target)
