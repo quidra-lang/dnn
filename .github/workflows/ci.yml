@@ -20,6 +20,8 @@ jobs:
         run: cmake -S quidra -B quidra/build -DCMAKE_BUILD_TYPE=Release && cmake --build quidra/build --parallel
       - name: Integration tests
         run: bash tests/integration.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
+      - name: Contract and stability tests
+        run: bash tests/contracts.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
       - name: Check example
         env:
           QUIDRA_PACKAGE_PATH: ${{ github.workspace }}/..
