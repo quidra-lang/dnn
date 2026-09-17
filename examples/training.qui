@@ -4,32 +4,40 @@ class Model
     dnn.LinearLayer hidden
     dnn.LinearLayer output
 
-Model model = Model(
-    hidden = dnn.Linear(features_in = 2, features_out = 4),
-    output = dnn.Linear(features_in = 4, features_out = 1, seed = 2)
-)
-dnn.SGDOptimizer optimizer = dnn.SGD(rate = 0.1)
+int | error train()
+    dnn.LinearLayer hidden = try dnn.Linear(features_in = 2, features_out = 4)
+    dnn.LinearLayer output = try dnn.Linear(features_in = 4, features_out = 1, seed = 2)
+    Model model = Model(hidden = hidden, output = output)
+    dnn.SGDOptimizer optimizer = try dnn.SGD(rate = 0.1)
 
-tensor<float32> samples = tensor.ones<float32>([1, 2])
-tensor<float32> targets = tensor.ones<float32>([1, 1])
+    tensor<float32> samples = tensor.ones<float32>([1, 2])
+    tensor<float32> targets = tensor.ones<float32>([1, 1])
 
-neural<float32> first = dnn.mse(
-    model.output.forward(
-        dnn.relu(model.hidden.forward(neural.track(samples)))
-    ),
-    targets
-)
-print(first.untrack().item())
-
-float32 latest = first.untrack().item()
-for iteration in range(100)
-    neural<float32> activated = dnn.relu(
-        model.hidden.forward(neural.track(samples))
+    neural<float32> first = dnn.mse(
+        model.output.forward(
+            dnn.relu(model.hidden.forward(neural.track(samples)))
+        ),
+        targets
     )
-    neural<float32> loss = dnn.mse(model.output.forward(activated), targets)
-    neural.Gradients gradients = neural.grad(loss)
-    optimizer.step(&model, gradients)
-    latest = loss.untrack().item()
+    print(first.untrack().item())
 
-print(latest)
-print(latest < first.untrack().item())
+    float32 latest = first.untrack().item()
+    for iteration in range(100)
+        neural<float32> activated = dnn.relu(
+            model.hidden.forward(neural.track(samples))
+        )
+        neural<float32> loss = dnn.mse(model.output.forward(activated), targets)
+        neural.Gradients gradients = neural.grad(loss)
+        optimizer.step(&model, gradients)
+        latest = loss.untrack().item()
+
+    print(latest)
+    print(latest < first.untrack().item())
+    return 0
+
+auto result = train()
+match result
+    int
+        int ignored = result
+    error problem
+        print(problem)
