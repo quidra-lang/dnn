@@ -1,0 +1,4 @@
+quidra.lock
+*.quistate
+.DS_Store
+quidra/

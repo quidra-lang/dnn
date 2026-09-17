@@ -1,0 +1,217 @@
+tensor<float32> uniform_weights(int count, float bound, int seed)
+    tensor<float32> values = tensor.zeros<float32>([count])
+    int state = seed % 2147483647
+    if state < 0
+        state = state + 2147483647
+    for warmup in range(8)
+        state = (48271 * state + 11) % 2147483647
+    for index in range(count)
+        state = (48271 * state + 11) % 2147483647
+        float unit = float(state) / 2147483647.0
+        values[index] = float32((unit * 2.0 - 1.0) * bound)
+    return values
+
+class LinearLayer
+    neural.Parameter<float32> weight
+    neural.Parameter<float32> bias
+
+    X forward<X>(X value)
+        return neural.affine(value, weight, bias)
+
+LinearLayer Linear(int features_in, int features_out, int seed = 1)
+    float bound = 1.0 / math.sqrt(float(features_in))
+    tensor<float32> weight_values = uniform_weights(
+        features_out * features_in, bound, seed
+    ).reshape([features_out, features_in])
+    return LinearLayer(
+        weight = neural.Parameter<float32>(value = weight_values),
+        bias = neural.Parameter<float32>(
+            value = tensor.zeros<float32>([features_out])
+        )
+    )
+
+class Conv2DLayer
+    neural.Parameter<float32> weight
+    neural.Parameter<float32> bias
+    int stride
+    int padding
+
+    X forward<X>(X value)
+        return neural.convolve2d(value, weight, bias, stride, padding)
+
+Conv2DLayer Conv2D(
+    int channels_in,
+    int channels_out,
+    int kernel,
+    int stride = 1,
+    int padding = 0,
+    int seed = 1
+)
+    float bound = 1.0 / math.sqrt(float(channels_in * kernel * kernel))
+    tensor<float32> weight_values = uniform_weights(
+        channels_out * channels_in * kernel * kernel, bound, seed
+    ).reshape([channels_out, channels_in, kernel, kernel])
+    return Conv2DLayer(
+        weight = neural.Parameter<float32>(value = weight_values),
+        bias = neural.Parameter<float32>(
+            value = tensor.zeros<float32>([channels_out])
+        ),
+        stride = stride,
+        padding = padding
+    )
+
+class BatchNormLayer
+    neural.Parameter<float32> scale
+    neural.Parameter<float32> bias
+    neural.State<tensor<float32>> running_mean
+    neural.State<tensor<float32>> running_variance
+    float momentum
+    float epsilon
+
+    neural<float32> forward(neural<float32> value)
+        return neural.normalize(
+            value, scale, bias, running_mean, running_variance,
+            momentum = momentum, epsilon = epsilon
+        )
+
+    tensor<float32> infer(tensor<float32> value)
+        return neural.normalize_inference(
+            value, scale, bias, running_mean, running_variance,
+            epsilon = epsilon
+        )
+
+BatchNormLayer BatchNorm(
+    int features,
+    float momentum = 0.1,
+    float epsilon = 0.00001
+)
+    return BatchNormLayer(
+        scale = neural.Parameter<float32>(
+            value = tensor.ones<float32>([features])
+        ),
+        bias = neural.Parameter<float32>(
+            value = tensor.zeros<float32>([features])
+        ),
+        running_mean = neural.State<tensor<float32>>(
+            value = tensor.zeros<float32>([features])
+        ),
+        running_variance = neural.State<tensor<float32>>(
+            value = tensor.ones<float32>([features])
+        ),
+        momentum = momentum,
+        epsilon = epsilon
+    )
+
+class DropoutLayer
+    float rate
+    neural.State<uint64> rng
+
+    neural<float32> forward(neural<float32> value)
+        return neural.random_mask(value, rng, rate = rate)
+
+    tensor<float32> infer(tensor<float32> value)
+        return value
+
+DropoutLayer Dropout(float rate, uint64 seed = uint64(0))
+    return DropoutLayer(
+        rate = rate,
+        rng = neural.State<uint64>(value = seed)
+    )
+
+X relu<X>(X value)
+    return (value + neural.absolute(value)) / 2.0
+
+X sigmoid<X>(X value)
+    return 1.0 / (1.0 + neural.exponential(0.0 - value))
+
+X tanh<X>(X value)
+    X lifted = (value - 20.0 + neural.absolute(value + 20.0)) / 2.0
+    X limited = (lifted + 20.0 - neural.absolute(lifted - 20.0)) / 2.0
+    X exponent = neural.exponential(limited * 2.0)
+    return (exponent - 1.0) / (exponent + 1.0)
+
+X softmax<X>(X value)
+    X shifted = value - neural.max_last(value)
+    X weights = neural.exponential(shifted)
+    return weights / neural.sum_last(weights)
+
+X gelu<X>(X value)
+    X cubic = value * value * value
+    X inner = (value + cubic * float32(0.044715)) * float32(0.7978845608028654)
+    return value * 0.5 * (1.0 + tanh(inner))
+
+neural<float32> mse(neural<float32> prediction, tensor<float32> target)
+    neural<float32> difference = prediction - neural.track(target)
+    return neural.mean(difference * difference)
+
+neural<float32> binary_cross_entropy(
+    neural<float32> prediction,
+    tensor<float32> target
+)
+    neural<float32> expected = neural.track(target)
+    neural<float32> lifted = (
+        prediction + float32(0.000001)
+        + neural.absolute(prediction - float32(0.000001))
+    ) / 2.0
+    neural<float32> limited = (
+        lifted + float32(0.999999)
+        - neural.absolute(lifted - float32(0.999999))
+    ) / 2.0
+    neural<float32> first = expected * neural.logarithm(limited)
+    neural<float32> second = (1.0 - expected) * neural.logarithm(1.0 - limited)
+    return neural.mean(0.0 - first - second)
+
+neural<float32> cross_entropy(
+    neural<float32> logits,
+    tensor<float32> target
+)
+    neural<float32> shifted = logits - neural.max_last(logits)
+    neural<float32> total = neural.sum_last(neural.exponential(shifted))
+    neural<float32> log_probabilities = shifted - neural.logarithm(total)
+    neural<float32> expected = neural.track(target)
+    neural<float32> per_class = expected * log_probabilities
+    return neural.mean(0.0 - neural.sum_last(per_class))
+
+class SGDOptimizer
+    float rate
+
+    void step<M>(M &model, neural.Gradients gradients)
+        neural.update(&model, gradients, rate = rate)
+
+SGDOptimizer SGD(float rate = 0.01)
+    return SGDOptimizer(rate = rate)
+
+class AdamOptimizer
+    float rate
+    float beta1
+    float beta2
+    float epsilon
+    neural.State<int> iteration
+    neural.State<bytes> moments
+
+    void step<M>(M &model, neural.Gradients gradients)
+        neural.moment_update(
+            &model,
+            rate,
+            beta1,
+            beta2,
+            epsilon,
+            &iteration,
+            &moments,
+            gradients
+        )
+
+AdamOptimizer Adam(
+    float rate = 0.001,
+    float beta1 = 0.9,
+    float beta2 = 0.999,
+    float epsilon = 0.00000001
+)
+    return AdamOptimizer(
+        rate = rate,
+        beta1 = beta1,
+        beta2 = beta2,
+        epsilon = epsilon,
+        iteration = neural.State<int>(value = 0),
+        moments = neural.State<bytes>(value = bytes())
+    )
