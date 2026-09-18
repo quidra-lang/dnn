@@ -5,10 +5,13 @@ on:
   pull_request:
 
 jobs:
-  test:
+  released-compatibility:
+    name: Released DNN v0.1.0 / Quidra v0.2.0
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: v0.1.0
       - uses: actions/checkout@v4
         with:
           repository: quidra-lang/quidra
@@ -26,3 +29,51 @@ jobs:
         env:
           QUIDRA_PACKAGE_PATH: ${{ github.workspace }}/..
         run: quidra/build/quidra check examples/training.qui
+
+  feature-core:
+    name: Quidra feature compatibility
+    if: github.ref == 'refs/heads/develop' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: quidra-lang/quidra
+          ref: v0.3.0
+          path: quidra
+      - name: Install Quidra dependencies
+        run: sudo apt-get update && sudo apt-get install -y llvm libcurl4-openssl-dev libpng-dev libjpeg-dev libtiff-dev libwebp-dev
+      - name: Build Quidra feature
+        run: cmake -S quidra -B quidra/build -DCMAKE_BUILD_TYPE=Release -DQUIDRA_ENABLE_TEST_GPU_BACKEND=ON && cmake --build quidra/build --parallel
+      - name: Integration tests
+        run: bash tests/integration.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
+      - name: Contract and stability tests
+        run: bash tests/contracts.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
+      - name: Device placement contracts
+        run: bash tests/device.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
+      - name: Real GPU numerical integration when available
+        run: bash tests/real_gpu_integration.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
+      - name: Check example
+        env:
+          QUIDRA_PACKAGE_PATH: ${{ github.workspace }}/..
+        run: quidra/build/quidra check examples/training.qui
+
+
+  metal-real-gpu:
+    name: Metal real GPU integration
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: quidra-lang/quidra
+          ref: v0.3.0
+          path: quidra
+      - name: Install Quidra dependencies
+        run: brew install curl libpng jpeg-turbo libtiff webp
+      - name: Build Quidra feature
+        run: cmake -S quidra -B quidra/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(brew --prefix curl);$(brew --prefix libpng);$(brew --prefix jpeg-turbo);$(brew --prefix libtiff);$(brew --prefix webp)" && cmake --build quidra/build --parallel
+      - name: Real Metal GPU numerical integration
+        env:
+          QUIDRA_REQUIRE_REAL_GPU: "1"
+        run: bash tests/real_gpu_integration.sh "$GITHUB_WORKSPACE/quidra/build/quidra"

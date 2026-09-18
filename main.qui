@@ -214,7 +214,7 @@ class AdamOptimizer
     float beta2
     float epsilon
     neural.State<int> iteration
-    neural.State<bytes> moments
+    neural.State<bin> moments
 
     void step<M>(M &model, neural.Gradients gradients)
         neural.moment_update(
@@ -248,5 +248,5 @@ AdamOptimizer | error Adam(
         beta2 = beta2,
         epsilon = epsilon,
         iteration = neural.State<int>(value = 0),
-        moments = neural.State<bytes>(value = bytes())
+        moments = neural.State<bin>(value = bin.fill(0, 0))
     )

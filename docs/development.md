@@ -46,6 +46,15 @@ procedure, execute the complete sequence:
 
 Never force-move, delete/recreate, or reuse a published release tag.
 
+## Accelerator component identity
+
+Native accelerator components belong to DNN releases. If a release includes
+cuDNN, cuBLAS, NCCL, Metal-specific support, or ROCm/HIP user-space components,
+record and package their exact versions, artifact identities, and checksums as
+part of that immutable DNN release. The same DNN version on the same supported
+OS/architecture must resolve to the same component set. Do not use a mutable
+"latest" component or silently prefer a system-installed CUDA/cuDNN stack.
+
 ## Core-first ordering
 
 If dnn needs a newer Quidra core, release Quidra core first. Only after that
