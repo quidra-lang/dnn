@@ -235,4 +235,109 @@ if [[ "$tracked_output" != "$tracked_expected" ]]; then
     exit 1
 fi
 
+
+
+cat > "$TMP/training-gpu.qui" <<'QUI'
+import dnn
+
+class ConvModel
+    dnn.Conv2DLayer convolution
+
+class LinearModel
+    dnn.LinearLayer dense
+
+int | error run()
+    tensor<float32> kernel = tensor.ones<float32>([1, 1, 1, 1], gpu = 0)
+    dnn.Conv2DLayer convolution = dnn.Conv2DLayer(
+        weight = neural.Parameter<float32>(value = kernel),
+        bias = neural.Parameter<float32>(
+            value = tensor.zeros<float32>([1], gpu = 0)
+        ),
+        stride = 1,
+        padding = 0
+    )
+    ConvModel conv_model = ConvModel(convolution = convolution)
+    tensor<float32> pixels = tensor.ones<float32>([1, 1, 2, 2], gpu = 0)
+    tensor<float32> zero_image = tensor.zeros<float32>([1, 1, 2, 2], gpu = 0)
+    neural<float32> conv_prediction = conv_model.convolution.forward(neural.track(pixels))
+    neural.Gradients conv_gradients = neural.grad(dnn.mse(conv_prediction, zero_image))
+    float32 conv_before = conv_model.convolution.weight.raw()[0, 0, 0, 0].item()
+    dnn.SGDOptimizer sgd = dnn.SGDOptimizer(rate = 0.1)
+    sgd.step(&conv_model, conv_gradients)
+    print(conv_model.convolution.weight.raw()[0, 0, 0, 0].item() < conv_before)
+
+    dnn.BatchNormLayer normalization = dnn.BatchNormLayer(
+        scale = neural.Parameter<float32>(
+            value = tensor.ones<float32>([2], gpu = 0)
+        ),
+        bias = neural.Parameter<float32>(
+            value = tensor.zeros<float32>([2], gpu = 0)
+        ),
+        running_mean = neural.State<tensor<float32>>(
+            value = tensor.zeros<float32>([2], gpu = 0)
+        ),
+        running_variance = neural.State<tensor<float32>>(
+            value = tensor.ones<float32>([2], gpu = 0)
+        ),
+        momentum = 0.1,
+        epsilon = 0.00001
+    )
+    tensor<float32> norm_values = tensor.ones<float32>([2, 2], gpu = 0)
+    neural<float32> normalized = normalization.forward(neural.track(norm_values))
+    neural.Gradients norm_gradients = neural.grad(neural.mean(normalized * normalized))
+    print(normalized.untrack().shape()[1])
+    print(normalization.running_mean.value[0].item() > float32(0))
+
+    dnn.DropoutLayer dropout = dnn.DropoutLayer(
+        rate = 0.5,
+        rng = neural.State<uint64>(value = uint64(17))
+    )
+    neural<float32> dropped = dropout.forward(neural.track(norm_values))
+    neural.Gradients dropout_gradients = neural.grad(neural.mean(dropped * dropped))
+    print(dropped.untrack().shape()[0])
+    print(dropout.rng.value != uint64(17))
+
+    dnn.LinearLayer dense = dnn.LinearLayer(
+        weight = neural.Parameter<float32>(
+            value = tensor.ones<float32>([1, 1], gpu = 0)
+        ),
+        bias = neural.Parameter<float32>(
+            value = tensor.zeros<float32>([1], gpu = 0)
+        )
+    )
+    LinearModel model = LinearModel(dense = dense)
+    dnn.AdamOptimizer adam = dnn.AdamOptimizer(
+        rate = 0.1,
+        beta1 = 0.9,
+        beta2 = 0.999,
+        epsilon = 0.00000001,
+        iteration = neural.State<int>(value = 0),
+        moments = neural.State<bytes>(value = bytes())
+    )
+    tensor<float32> sample = tensor.ones<float32>([1, 1], gpu = 0)
+    tensor<float32> target = tensor.zeros<float32>([1, 1], gpu = 0)
+    float32 before = model.dense.weight.raw()[0, 0].item()
+    neural<float32> prediction = model.dense.forward(neural.track(sample))
+    neural.Gradients gradients = neural.grad(dnn.mse(prediction, target))
+    adam.step(&model, gradients)
+    print(adam.iteration.value)
+    print(model.dense.weight.raw()[0, 0].item() < before)
+    return 0
+
+auto result = run()
+match result
+    int
+        int ignored = result
+    error problem
+        print(problem)
+QUI
+
+training_output="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/training-gpu.qui")"
+training_expected="$(printf 'true\n2\ntrue\n2\ntrue\n1\ntrue')"
+if [[ "$training_output" != "$training_expected" ]]; then
+    echo "unexpected GPU training output:" >&2
+    printf '%s\n' "$training_output" >&2
+    exit 1
+fi
+
 echo "dnn device contracts: ok"
