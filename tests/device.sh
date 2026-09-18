@@ -200,31 +200,40 @@ import dnn
 class Model
     dnn.LinearLayer dense
 
-dnn.LinearLayer layer = dnn.LinearLayer(
-    weight = neural.Parameter<float32>(
-        value = tensor.ones<float32>([1, 2], gpu = 0)
-    ),
-    bias = neural.Parameter<float32>(
-        value = tensor.zeros<float32>([1], gpu = 0)
+int | error run()
+    dnn.LinearLayer layer = dnn.LinearLayer(
+        weight = neural.Parameter<float32>(
+            value = tensor.ones<float32>([1, 2], gpu = 0)
+        ),
+        bias = neural.Parameter<float32>(
+            value = tensor.zeros<float32>([1], gpu = 0)
+        )
     )
-)
-Model model = Model(dense = layer)
-tensor<float32> samples = tensor.ones<float32>([1, 2], gpu = 0)
-tensor<float32> target = tensor.zeros<float32>([1, 1], gpu = 0)
+    Model model = Model(dense = layer)
+    tensor<float32> samples = tensor.ones<float32>([1, 2], gpu = 0)
+    tensor<float32> target = tensor.zeros<float32>([1, 1], gpu = 0)
 
-neural<float32> tracked = neural.track(samples)
-neural<float32> prediction = model.dense.forward(tracked)
-neural<float32> loss = dnn.mse(prediction, target)
-print(prediction.untrack()[0, 0].item())
-print(loss.untrack().item())
+    neural<float32> tracked = neural.track(samples)
+    neural<float32> prediction = model.dense.forward(tracked)
+    neural<float32> loss = dnn.mse(prediction, target)
+    print(prediction.untrack()[0, 0].item())
+    print(loss.untrack().item())
 
-neural.Gradients gradients = neural.grad(loss)
-float32 before = model.dense.weight.raw()[0, 0].item()
-dnn.SGDOptimizer optimizer = dnn.SGDOptimizer(rate = 0.1)
-optimizer.step(&model, gradients)
-float32 after = model.dense.weight.raw()[0, 0].item()
-print(after < before)
-print(after > float32(0.59) and after < float32(0.61))
+    neural.Gradients gradients = neural.grad(loss)
+    float32 before = model.dense.weight.raw()[0, 0].item()
+    dnn.SGDOptimizer optimizer = try dnn.SGD(rate = 0.1)
+    optimizer.step(&model, gradients)
+    float32 after = model.dense.weight.raw()[0, 0].item()
+    print(after < before)
+    print(after > float32(0.59) and after < float32(0.61))
+    return 0
+
+auto result = run()
+match result
+    int
+        int ignored = result
+    error problem
+        print(problem)
 QUI
 
 tracked_output="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/tracked-gpu.qui")"
