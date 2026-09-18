@@ -6,30 +6,25 @@ standard `tensor` and `neural` foundations.
 
 ## Install
 
-Clone this repository and install it with the Quidra package command:
+dnn v0.1.0 supports Quidra `>=0.2.0 <0.3.0`.
+
+With Quidra v0.2.0, install the exact released source:
 
 ```sh
+git clone --depth 1 --branch v0.1.0 https://github.com/quidra-lang/dnn.git
+cd dnn
 quidra package install . --name dnn
+```
+
+Quidra versions that provide the release-aware short package CLI can install the
+same immutable release directly:
+
+```sh
+quidra install dnn@0.1.0
 ```
 
 Then import it normally. Factories validate their configuration and return
 `error` for invalid dimensions or hyperparameters:
-
-```quidra
-import dnn
-
-int | error predict()
-    dnn.LinearLayer layer = try dnn.Linear(
-        features_in = 2, features_out = 1
-    )
-    tensor<float32> samples = tensor.ones<float32>([1, 2])
-    neural<float32> prediction = layer.forward(neural.track(samples))
-    print(prediction.untrack().shape()[1])
-    return 0
-```
-
-For development, place the repository in a directory listed by
-`QUIDRA_PACKAGE_PATH` instead of installing it.
 
 ## API
 
@@ -93,6 +88,10 @@ reshape it to build a layer with your own initialization, or construct
 ## Example
 
 See [`examples/training.qui`](examples/training.qui).
+
+## Development
+
+See [`docs/development.md`](docs/development.md) for the canonical main/develop and release procedure.
 
 ## License
 
