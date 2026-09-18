@@ -13,27 +13,18 @@ class LinearLayer
     X forward<X>(X value)
         return neural.affine(value, weight, bias)
 
-LinearLayer | error Linear(
-    int features_in,
-    int features_out,
-    int seed = 1,
-    int gpu = -1
-)
+LinearLayer | error Linear(int features_in, int features_out, int seed = 1)
     if features_in <= 0 or features_out <= 0
         return error("dnn.Linear requires positive input and output feature counts")
-    if gpu < -1
-        return error("dnn.Linear gpu must be -1 for CPU or a nonnegative GPU index")
     float bound = 1.0 / math.sqrt(float(features_in))
     tensor<float32> weight_values = uniform_weights(
         features_out * features_in, bound, seed
     ).reshape([features_out, features_in])
-    tensor<float32> bias_values = tensor.zeros<float32>([features_out])
-    if gpu >= 0
-        weight_values = weight_values.gpu(gpu)
-        bias_values = bias_values.gpu(gpu)
     return LinearLayer(
         weight = neural.Parameter<float32>(value = weight_values),
-        bias = neural.Parameter<float32>(value = bias_values)
+        bias = neural.Parameter<float32>(
+            value = tensor.zeros<float32>([features_out])
+        )
     )
 
 class Conv2DLayer
@@ -51,8 +42,7 @@ Conv2DLayer | error Conv2D(
     int kernel,
     int stride = 1,
     int padding = 0,
-    int seed = 1,
-    int gpu = -1
+    int seed = 1
 )
     if channels_in <= 0 or channels_out <= 0
         return error("dnn.Conv2D requires positive input and output channel counts")
@@ -62,19 +52,15 @@ Conv2DLayer | error Conv2D(
         return error("dnn.Conv2D stride must be positive")
     if padding < 0
         return error("dnn.Conv2D padding must be nonnegative")
-    if gpu < -1
-        return error("dnn.Conv2D gpu must be -1 for CPU or a nonnegative GPU index")
     float bound = 1.0 / math.sqrt(float(channels_in * kernel * kernel))
     tensor<float32> weight_values = uniform_weights(
         channels_out * channels_in * kernel * kernel, bound, seed
     ).reshape([channels_out, channels_in, kernel, kernel])
-    tensor<float32> bias_values = tensor.zeros<float32>([channels_out])
-    if gpu >= 0
-        weight_values = weight_values.gpu(gpu)
-        bias_values = bias_values.gpu(gpu)
     return Conv2DLayer(
         weight = neural.Parameter<float32>(value = weight_values),
-        bias = neural.Parameter<float32>(value = bias_values),
+        bias = neural.Parameter<float32>(
+            value = tensor.zeros<float32>([channels_out])
+        ),
         stride = stride,
         padding = padding
     )
@@ -102,8 +88,7 @@ class BatchNormLayer
 BatchNormLayer | error BatchNorm(
     int features,
     float momentum = 0.1,
-    float epsilon = 0.00001,
-    int gpu = -1
+    float epsilon = 0.00001
 )
     if features <= 0
         return error("dnn.BatchNorm features must be positive")
@@ -111,22 +96,19 @@ BatchNormLayer | error BatchNorm(
         return error("dnn.BatchNorm momentum must be in [0, 1)")
     if epsilon <= 0.0
         return error("dnn.BatchNorm epsilon must be positive")
-    if gpu < -1
-        return error("dnn.BatchNorm gpu must be -1 for CPU or a nonnegative GPU index")
-    tensor<float32> scale_values = tensor.ones<float32>([features])
-    tensor<float32> bias_values = tensor.zeros<float32>([features])
-    tensor<float32> mean_values = tensor.zeros<float32>([features])
-    tensor<float32> variance_values = tensor.ones<float32>([features])
-    if gpu >= 0
-        scale_values = scale_values.gpu(gpu)
-        bias_values = bias_values.gpu(gpu)
-        mean_values = mean_values.gpu(gpu)
-        variance_values = variance_values.gpu(gpu)
     return BatchNormLayer(
-        scale = neural.Parameter<float32>(value = scale_values),
-        bias = neural.Parameter<float32>(value = bias_values),
-        running_mean = neural.State<tensor<float32>>(value = mean_values),
-        running_variance = neural.State<tensor<float32>>(value = variance_values),
+        scale = neural.Parameter<float32>(
+            value = tensor.ones<float32>([features])
+        ),
+        bias = neural.Parameter<float32>(
+            value = tensor.zeros<float32>([features])
+        ),
+        running_mean = neural.State<tensor<float32>>(
+            value = tensor.zeros<float32>([features])
+        ),
+        running_variance = neural.State<tensor<float32>>(
+            value = tensor.ones<float32>([features])
+        ),
         momentum = momentum,
         epsilon = epsilon
     )

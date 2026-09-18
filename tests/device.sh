@@ -135,7 +135,22 @@ print(activated[0, 0].item())
 print(activated[0, 1].item())
 print(probabilities[0, 0].item() + probabilities[0, 1].item())
 
-dnn.BatchNormLayer normalization = try dnn.BatchNorm(features = 2, gpu = 0)
+dnn.BatchNormLayer normalization = dnn.BatchNormLayer(
+    scale = neural.Parameter<float32>(
+        value = tensor.ones<float32>([2], gpu = 0)
+    ),
+    bias = neural.Parameter<float32>(
+        value = tensor.zeros<float32>([2], gpu = 0)
+    ),
+    running_mean = neural.State<tensor<float32>>(
+        value = tensor.zeros<float32>([2], gpu = 0)
+    ),
+    running_variance = neural.State<tensor<float32>>(
+        value = tensor.ones<float32>([2], gpu = 0)
+    ),
+    momentum = 0.1,
+    epsilon = 0.00001
+)
 tensor<float32> normalized = normalization.infer(
     tensor.ones<float32>([1, 2], gpu = 0)
 )
