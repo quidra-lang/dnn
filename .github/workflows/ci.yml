@@ -48,6 +48,8 @@ jobs:
         run: bash tests/contracts.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
       - name: Device placement contracts
         run: bash tests/device.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
+      - name: Real GPU numerical integration when available
+        run: bash tests/real_gpu_integration.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
       - name: Check example
         env:
           QUIDRA_PACKAGE_PATH: ${{ github.workspace }}/..
