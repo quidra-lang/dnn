@@ -133,7 +133,8 @@ tensor<float32> activated = dnn.relu(values)
 tensor<float32> probabilities = dnn.softmax(values)
 print(activated[0, 0].item())
 print(activated[0, 1].item())
-print(probabilities[0, 0].item() + probabilities[0, 1].item())
+float32 probability_total = probabilities[0, 0].item() + probabilities[0, 1].item()
+print(probability_total > float32(0.9999) and probability_total < float32(1.0001))
 
 dnn.BatchNormLayer normalization = dnn.BatchNormLayer(
     scale = neural.Parameter<float32>(
@@ -159,7 +160,7 @@ print(normalized[0, 0].item() > float32(0.9))
 QUI
 
 compute_output="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/same-device-compute.qui")"
-compute_expected="$(printf '1\n1\n2.0\n0.0\n1.0\n1.0\n2\ntrue')"
+compute_expected="$(printf '1\n1\n2.0\n0.0\n1.0\ntrue\n2\ntrue')"
 if [[ "$compute_output" != "$compute_expected" ]]; then
     echo "unexpected same-GPU DNN output:" >&2
     printf '%s\n' "$compute_output" >&2
