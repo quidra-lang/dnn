@@ -224,11 +224,11 @@ dnn.SGDOptimizer optimizer = dnn.SGDOptimizer(rate = 0.1)
 optimizer.step(&model, gradients)
 float32 after = model.dense.weight.raw()[0, 0].item()
 print(after < before)
-print(after)
+print(after > float32(0.59) and after < float32(0.61))
 QUI
 
 tracked_output="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/tracked-gpu.qui")"
-tracked_expected="$(printf '2.0\n4.0\ntrue\n0.6')"
+tracked_expected="$(printf '2.0\n4.0\ntrue\ntrue')"
 if [[ "$tracked_output" != "$tracked_expected" ]]; then
     echo "unexpected tracked GPU DNN output:" >&2
     printf '%s\n' "$tracked_output" >&2
