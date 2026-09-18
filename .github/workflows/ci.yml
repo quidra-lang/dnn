@@ -26,3 +26,29 @@ jobs:
         env:
           QUIDRA_PACKAGE_PATH: ${{ github.workspace }}/..
         run: quidra/build/quidra check examples/training.qui
+
+  feature-core:
+    name: Quidra feature compatibility
+    if: github.ref == 'refs/heads/develop' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: quidra-lang/quidra
+          ref: feature
+          path: quidra
+      - name: Install Quidra dependencies
+        run: sudo apt-get update && sudo apt-get install -y llvm libcurl4-openssl-dev libpng-dev libjpeg-dev libtiff-dev libwebp-dev
+      - name: Build Quidra feature
+        run: cmake -S quidra -B quidra/build -DCMAKE_BUILD_TYPE=Release && cmake --build quidra/build --parallel
+      - name: Integration tests
+        run: bash tests/integration.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
+      - name: Contract and stability tests
+        run: bash tests/contracts.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
+      - name: Device placement contracts
+        run: bash tests/device.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
+      - name: Check example
+        env:
+          QUIDRA_PACKAGE_PATH: ${{ github.workspace }}/..
+        run: quidra/build/quidra check examples/training.qui
