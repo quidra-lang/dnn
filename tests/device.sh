@@ -109,7 +109,7 @@ match result
 QUI
 expect_device_failure "$TMP/parameter-device-mismatch.qui" "input and Parameter/state tensors must be on the same device"
 
-cat > "$TMP/same-device-unsupported.qui" <<'QUI'
+cat > "$TMP/same-device-compute.qui" <<'QUI'
 import dnn
 
 dnn.LinearLayer layer = dnn.LinearLayer(
@@ -120,11 +120,63 @@ dnn.LinearLayer layer = dnn.LinearLayer(
         value = tensor.zeros<float32>([1], gpu = 0)
     )
 )
-tensor<float32> samples_gpu = tensor.ones<float32>([1, 2], gpu = 0)
-tensor<float32> output = layer.forward(samples_gpu)
+tensor<float32> samples = tensor.ones<float32>([1, 2], gpu = 0)
+tensor<float32> output = layer.forward(samples)
+print(output.shape()[0])
 print(output.shape()[1])
+print(output[0, 0].item())
+
+tensor<float32> values = tensor.zeros<float32>([1, 2], gpu = 0)
+values[0, 0] = float32(-1)
+values[0, 1] = float32(1)
+tensor<float32> activated = dnn.relu(values)
+tensor<float32> probabilities = dnn.softmax(values)
+print(activated[0, 0].item())
+print(activated[0, 1].item())
+print(probabilities[0, 0].item() + probabilities[0, 1].item())
+
+dnn.BatchNormLayer normalization = try dnn.BatchNorm(features = 2, gpu = 0)
+tensor<float32> normalized = normalization.infer(
+    tensor.ones<float32>([1, 2], gpu = 0)
+)
+print(normalized.shape()[1])
+print(normalized[0, 0].item() > float32(0.9))
 QUI
-expect_device_failure "$TMP/same-device-unsupported.qui" "neural.affine is not supported on gpu(0) by the current neural backend"
+
+compute_output="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/same-device-compute.qui")"
+compute_expected="$(printf '1\n1\n2.0\n0.0\n1.0\n1.0\n2\ntrue')"
+if [[ "$compute_output" != "$compute_expected" ]]; then
+    echo "unexpected same-GPU DNN output:" >&2
+    printf '%s\n' "$compute_output" >&2
+    exit 1
+fi
+
+cat > "$TMP/convolution-gpu.qui" <<'QUI'
+import dnn
+
+tensor<float32> kernel = tensor.zeros<float32>([1, 1, 1, 1], gpu = 0)
+kernel[0, 0, 0, 0] = float32(2)
+dnn.Conv2DLayer convolution = dnn.Conv2DLayer(
+    weight = neural.Parameter<float32>(value = kernel),
+    bias = neural.Parameter<float32>(
+        value = tensor.zeros<float32>([1], gpu = 0)
+    ),
+    stride = 1,
+    padding = 0
+)
+tensor<float32> pixels = tensor.ones<float32>([1, 1, 2, 2], gpu = 0)
+tensor<float32> filtered = convolution.forward(pixels)
+print(filtered.shape()[2])
+print(filtered.shape()[3])
+print(filtered[0, 0, 1, 1].item())
+QUI
+conv_output="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/convolution-gpu.qui")"
+conv_expected="$(printf '2\n2\n2.0')"
+if [[ "$conv_output" != "$conv_expected" ]]; then
+    echo "unexpected same-GPU convolution output:" >&2
+    printf '%s\n' "$conv_output" >&2
+    exit 1
+fi
 
 cat > "$TMP/track-no-fallback.qui" <<'QUI'
 tensor<float32> samples_gpu = tensor.ones<float32>([1, 2], gpu = 0)
