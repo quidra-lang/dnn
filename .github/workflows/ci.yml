@@ -5,10 +5,13 @@ on:
   pull_request:
 
 jobs:
-  test:
+  released-compatibility:
+    name: Released DNN v0.1.0 / Quidra v0.2.0
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: v0.1.0
       - uses: actions/checkout@v4
         with:
           repository: quidra-lang/quidra
