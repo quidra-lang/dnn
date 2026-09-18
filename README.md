@@ -106,6 +106,15 @@ belongs behind the DNN backend boundary (cuDNN/cuBLAS and, where appropriate,
 NCCL), Apple acceleration behind the Metal backend, and AMD acceleration behind
 the ROCm/HIP backend.
 
+Accelerator user-space libraries are owned by the DNN package, not Quidra core.
+When a DNN release ships NVIDIA acceleration, that exact DNN version fixes the
+cuDNN/cuBLAS/NCCL component versions, artifacts, and checksums it uses. DNN must
+not silently bind to a system-installed CUDA Toolkit or cuDNN. Quidra core owns
+the lower device/driver boundary; DNN owns the higher neural-library boundary.
+The current development backend has no hidden GPU fallback: unsupported GPU
+operations fail explicitly until the corresponding DNN accelerator backend is
+available.
+
 The released package dependency remains tied only to released Quidra versions.
 During development, CI additionally builds the current Quidra `feature` branch
 and checks the GPU placement/transfer contracts without changing
