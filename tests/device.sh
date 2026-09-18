@@ -178,11 +178,45 @@ if [[ "$conv_output" != "$conv_expected" ]]; then
     exit 1
 fi
 
-cat > "$TMP/track-no-fallback.qui" <<'QUI'
-tensor<float32> samples_gpu = tensor.ones<float32>([1, 2], gpu = 0)
-neural<float32> tracked = neural.track(samples_gpu)
-print(tracked.untrack().shape()[0])
+cat > "$TMP/tracked-gpu.qui" <<'QUI'
+import dnn
+
+class Model
+    dnn.LinearLayer dense
+
+dnn.LinearLayer layer = dnn.LinearLayer(
+    weight = neural.Parameter<float32>(
+        value = tensor.ones<float32>([1, 2], gpu = 0)
+    ),
+    bias = neural.Parameter<float32>(
+        value = tensor.zeros<float32>([1], gpu = 0)
+    )
+)
+Model model = Model(dense = layer)
+tensor<float32> samples = tensor.ones<float32>([1, 2], gpu = 0)
+tensor<float32> target = tensor.zeros<float32>([1, 1], gpu = 0)
+
+neural<float32> tracked = neural.track(samples)
+neural<float32> prediction = model.dense.forward(tracked)
+neural<float32> loss = dnn.mse(prediction, target)
+print(prediction.untrack()[0, 0].item())
+print(loss.untrack().item())
+
+neural.Gradients gradients = neural.grad(loss)
+float32 before = model.dense.weight.raw()[0, 0].item()
+dnn.SGDOptimizer optimizer = try dnn.SGD(rate = 0.1)
+optimizer.step(&model, gradients)
+float32 after = model.dense.weight.raw()[0, 0].item()
+print(after < before)
+print(after)
 QUI
-expect_device_failure "$TMP/track-no-fallback.qui" "neural tensor conversion is not supported on gpu(0)"
+
+tracked_output="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/tracked-gpu.qui")"
+tracked_expected="$(printf '2.0\n4.0\ntrue\n0.6')"
+if [[ "$tracked_output" != "$tracked_expected" ]]; then
+    echo "unexpected tracked GPU DNN output:" >&2
+    printf '%s\n' "$tracked_output" >&2
+    exit 1
+fi
 
 echo "dnn device contracts: ok"
