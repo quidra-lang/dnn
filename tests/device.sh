@@ -95,8 +95,8 @@ import dnn
 
 int | error run()
     dnn.LinearLayer layer = try dnn.Linear(features_in = 2, features_out = 1)
-    tensor<float32> input = tensor.ones<float32>([1, 2], gpu = 0)
-    tensor<float32> output = layer.forward(input)
+    tensor<float32> samples_gpu = tensor.ones<float32>([1, 2], gpu = 0)
+    tensor<float32> output = layer.forward(samples_gpu)
     print(output.shape()[1])
     return 0
 
@@ -120,15 +120,15 @@ dnn.LinearLayer layer = dnn.LinearLayer(
         value = tensor.zeros<float32>([1], gpu = 0)
     )
 )
-tensor<float32> input = tensor.ones<float32>([1, 2], gpu = 0)
-tensor<float32> output = layer.forward(input)
+tensor<float32> samples_gpu = tensor.ones<float32>([1, 2], gpu = 0)
+tensor<float32> output = layer.forward(samples_gpu)
 print(output.shape()[1])
 QUI
 expect_device_failure "$TMP/same-device-unsupported.qui" "neural.affine is not supported on gpu(0) by the current neural backend"
 
 cat > "$TMP/track-no-fallback.qui" <<'QUI'
-tensor<float32> input = tensor.ones<float32>([1, 2], gpu = 0)
-neural<float32> tracked = neural.track(input)
+tensor<float32> samples_gpu = tensor.ones<float32>([1, 2], gpu = 0)
+neural<float32> tracked = neural.track(samples_gpu)
 print(tracked.untrack().shape()[0])
 QUI
 expect_device_failure "$TMP/track-no-fallback.qui" "neural tensor conversion is not supported on gpu(0)"
