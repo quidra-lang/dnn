@@ -251,6 +251,20 @@ int | error run()
         gpu_adam_model.dense.weight.raw()[0, 0].item()
     ))
     print(cpu_adam.iteration.value == gpu_adam.iteration.value)
+
+    neural.Gradients cpu_adam_grad2 = neural.grad(
+        dnn.mse(cpu_adam_model.dense.forward(neural.track(cpu_one)), cpu_zero)
+    )
+    neural.Gradients gpu_adam_grad2 = neural.grad(
+        dnn.mse(gpu_adam_model.dense.forward(neural.track(gpu_one)), gpu_zero)
+    )
+    cpu_adam.step(&cpu_adam_model, cpu_adam_grad2)
+    gpu_adam.step(&gpu_adam_model, gpu_adam_grad2)
+    print(near(
+        cpu_adam_model.dense.weight.raw()[0, 0].item(),
+        gpu_adam_model.dense.weight.raw()[0, 0].item()
+    ))
+    print(cpu_adam.iteration.value == 2 and gpu_adam.iteration.value == 2)
     return 0
 
 auto result = run()
@@ -262,7 +276,7 @@ match result
 QUI
 
 output="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/dnn-real-gpu.qui")"
-expected="$(printf 'true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue')"
+expected="$(printf 'true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue')"
 if [[ "$output" != "$expected" ]]; then
     echo "DNN real GPU numerical equivalence failed on gpu($GPU_INDEX)" >&2
     printf '%s\n' "$output" >&2

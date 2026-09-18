@@ -388,7 +388,13 @@ int | error run()
     neural.Gradients gradients = neural.grad(dnn.mse(prediction, target))
     adam.step(&model, gradients)
     print(adam.iteration.value)
-    print(model.dense.weight.raw()[0, 0].item() < before)
+    float32 first_after = model.dense.weight.raw()[0, 0].item()
+    print(first_after < before)
+    neural<float32> second_prediction = model.dense.forward(neural.track(sample))
+    neural.Gradients second_gradients = neural.grad(dnn.mse(second_prediction, target))
+    adam.step(&model, second_gradients)
+    print(adam.iteration.value)
+    print(model.dense.weight.raw()[0, 0].item() < first_after)
     return 0
 
 auto result = run()
@@ -400,7 +406,7 @@ match result
 QUI
 
 training_output="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/training-gpu.qui")"
-training_expected="$(printf 'true\n2\ntrue\n2\ntrue\ntrue\ntrue\n1\ntrue')"
+training_expected="$(printf 'true\n2\ntrue\n2\ntrue\ntrue\ntrue\n1\ntrue\n2\ntrue')"
 if [[ "$training_output" != "$training_expected" ]]; then
     echo "unexpected GPU training output:" >&2
     printf '%s\n' "$training_output" >&2
