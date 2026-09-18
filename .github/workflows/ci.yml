@@ -54,3 +54,23 @@ jobs:
         env:
           QUIDRA_PACKAGE_PATH: ${{ github.workspace }}/..
         run: quidra/build/quidra check examples/training.qui
+
+
+  metal-real-gpu:
+    name: Metal real GPU integration
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: quidra-lang/quidra
+          ref: feature
+          path: quidra
+      - name: Install Quidra dependencies
+        run: brew install curl libpng jpeg-turbo libtiff webp
+      - name: Build Quidra feature
+        run: cmake -S quidra -B quidra/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(brew --prefix curl);$(brew --prefix libpng);$(brew --prefix jpeg-turbo);$(brew --prefix libtiff);$(brew --prefix webp)" && cmake --build quidra/build --parallel
+      - name: Real Metal GPU numerical integration
+        env:
+          QUIDRA_REQUIRE_REAL_GPU: "1"
+        run: bash tests/real_gpu_integration.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
