@@ -255,6 +255,9 @@ class ConvModel
 class LinearModel
     dnn.LinearLayer dense
 
+class ParameterModel
+    neural.Parameter<float32> value
+
 int | error run()
     tensor<float32> kernel = tensor.ones<float32>([1, 1, 1, 1], gpu = 0)
     dnn.Conv2DLayer convolution = dnn.Conv2DLayer(
@@ -306,6 +309,61 @@ int | error run()
     print(dropped.untrack().shape()[0])
     print(dropout.rng.value != uint64(17))
 
+    ParameterModel cpu_dropout_model = ParameterModel(
+        value = neural.Parameter<float32>(
+            value = tensor.ones<float32>([2, 2])
+        )
+    )
+    ParameterModel gpu_dropout_model = ParameterModel(
+        value = neural.Parameter<float32>(
+            value = tensor.ones<float32>([2, 2], gpu = 0)
+        )
+    )
+    dnn.DropoutLayer cpu_dropout_backward = dnn.DropoutLayer(
+        rate = 0.5,
+        rng = neural.State<uint64>(value = uint64(29))
+    )
+    dnn.DropoutLayer gpu_dropout_backward = dnn.DropoutLayer(
+        rate = 0.5,
+        rng = neural.State<uint64>(value = uint64(29))
+    )
+    neural<float32> cpu_dropout_output = cpu_dropout_backward.forward(
+        cpu_dropout_model.value.track()
+    )
+    neural<float32> gpu_dropout_output = gpu_dropout_backward.forward(
+        gpu_dropout_model.value.track()
+    )
+    neural.Gradients cpu_dropout_gradients = neural.grad(neural.mean(cpu_dropout_output))
+    neural.Gradients gpu_dropout_gradients = neural.grad(neural.mean(gpu_dropout_output))
+    dnn.SGDOptimizer cpu_dropout_sgd = dnn.SGDOptimizer(rate = 0.1)
+    dnn.SGDOptimizer gpu_dropout_sgd = dnn.SGDOptimizer(rate = 0.1)
+    cpu_dropout_sgd.step(&cpu_dropout_model, cpu_dropout_gradients)
+    gpu_dropout_sgd.step(&gpu_dropout_model, gpu_dropout_gradients)
+    tensor<float32> gpu_dropout_weight = gpu_dropout_model.value.raw().cpu()
+    print(
+        cpu_dropout_model.value.raw()[0, 0].item() == gpu_dropout_weight[0, 0].item()
+        and cpu_dropout_model.value.raw()[0, 1].item() == gpu_dropout_weight[0, 1].item()
+        and cpu_dropout_model.value.raw()[1, 0].item() == gpu_dropout_weight[1, 0].item()
+        and cpu_dropout_model.value.raw()[1, 1].item() == gpu_dropout_weight[1, 1].item()
+    )
+
+    ParameterModel accumulation_model = ParameterModel(
+        value = neural.Parameter<float32>(
+            value = tensor.ones<float32>([1], gpu = 0)
+        )
+    )
+    neural<float32> accumulation_value = accumulation_model.value.track()
+    neural.Gradients accumulation_gradients = neural.grad(
+        neural.mean(accumulation_value + accumulation_value)
+    )
+    dnn.SGDOptimizer accumulation_sgd = dnn.SGDOptimizer(rate = 0.1)
+    accumulation_sgd.step(&accumulation_model, accumulation_gradients)
+    float32 accumulation_after = accumulation_model.value.raw()[0].item()
+    print(
+        accumulation_after > float32(0.7999)
+        and accumulation_after < float32(0.8001)
+    )
+
     dnn.LinearLayer dense = dnn.LinearLayer(
         weight = neural.Parameter<float32>(
             value = tensor.ones<float32>([1, 1], gpu = 0)
@@ -342,7 +400,7 @@ match result
 QUI
 
 training_output="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/training-gpu.qui")"
-training_expected="$(printf 'true\n2\ntrue\n2\ntrue\n1\ntrue')"
+training_expected="$(printf 'true\n2\ntrue\n2\ntrue\ntrue\ntrue\n1\ntrue')"
 if [[ "$training_output" != "$training_expected" ]]; then
     echo "unexpected GPU training output:" >&2
     printf '%s\n' "$training_output" >&2
