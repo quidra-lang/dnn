@@ -1,0 +1,223 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+QUIDRA="${1:-}"
+if [[ -z "$QUIDRA" ]]; then
+    echo "usage: $0 /path/to/quidra" >&2
+    exit 2
+fi
+
+REPOSITORY_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PACKAGE_ROOT="$(dirname "$REPOSITORY_ROOT")"
+GPU_INDEX="${QUIDRA_REAL_GPU_INDEX:-0}"
+REQUIRE_REAL="${QUIDRA_REQUIRE_REAL_GPU:-0}"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+set +e
+gpu_info="$("$QUIDRA" gpu 2>&1)"
+gpu_status=$?
+set -e
+skip_or_fail() {
+    local reason="$1"
+    if [[ "$REQUIRE_REAL" == "1" ]]; then
+        echo "real DNN GPU integration required but unavailable: $reason" >&2
+        printf '%s\n' "$gpu_info" >&2
+        exit 1
+    fi
+    echo "dnn real GPU integration: skipped ($reason)"
+    exit 0
+}
+if [[ $gpu_status -ne 0 ]]; then skip_or_fail "quidra gpu failed"; fi
+if grep -Fq "backend: TEST" <<<"$gpu_info"; then skip_or_fail "fake GPU backend is active"; fi
+if ! grep -Fq "GPU $GPU_INDEX" <<<"$gpu_info"; then skip_or_fail "gpu($GPU_INDEX) is not present"; fi
+
+cat > "$TMP/dnn-real-gpu.qui" <<QUI
+import dnn
+
+class LinearModel
+    dnn.LinearLayer dense
+
+class ConvModel
+    dnn.Conv2DLayer convolution
+
+class NormModel
+    dnn.BatchNormLayer normalization
+
+bool near(float32 a, float32 b)
+    float32 d = a - b
+    return d > float32(-0.0005) and d < float32(0.0005)
+
+int | error run()
+    dnn.LinearLayer cpu_linear = dnn.LinearLayer(
+        weight = neural.Parameter<float32>(value = tensor.ones<float32>([1, 2])),
+        bias = neural.Parameter<float32>(value = tensor.zeros<float32>([1]))
+    )
+    dnn.LinearLayer gpu_linear = dnn.LinearLayer(
+        weight = neural.Parameter<float32>(value = tensor.ones<float32>([1, 2], gpu = $GPU_INDEX)),
+        bias = neural.Parameter<float32>(value = tensor.zeros<float32>([1], gpu = $GPU_INDEX))
+    )
+    tensor<float32> cpu_samples = tensor.ones<float32>([1, 2])
+    tensor<float32> gpu_samples = cpu_samples.gpu($GPU_INDEX)
+    tensor<float32> cpu_linear_out = cpu_linear.forward(cpu_samples)
+    tensor<float32> gpu_linear_out = gpu_linear.forward(gpu_samples).cpu()
+    print(near(cpu_linear_out[0, 0].item(), gpu_linear_out[0, 0].item()))
+
+    dnn.Conv2DLayer cpu_conv = dnn.Conv2DLayer(
+        weight = neural.Parameter<float32>(value = tensor.ones<float32>([1, 1, 1, 1])),
+        bias = neural.Parameter<float32>(value = tensor.zeros<float32>([1])),
+        stride = 1,
+        padding = 0
+    )
+    dnn.Conv2DLayer gpu_conv = dnn.Conv2DLayer(
+        weight = neural.Parameter<float32>(value = tensor.ones<float32>([1, 1, 1, 1], gpu = $GPU_INDEX)),
+        bias = neural.Parameter<float32>(value = tensor.zeros<float32>([1], gpu = $GPU_INDEX)),
+        stride = 1,
+        padding = 0
+    )
+    tensor<float32> cpu_pixels = tensor.ones<float32>([1, 1, 2, 2])
+    tensor<float32> gpu_pixels = cpu_pixels.gpu($GPU_INDEX)
+    tensor<float32> cpu_conv_out = cpu_conv.forward(cpu_pixels)
+    tensor<float32> gpu_conv_out = gpu_conv.forward(gpu_pixels).cpu()
+    print(near(cpu_conv_out[0, 0, 1, 1].item(), gpu_conv_out[0, 0, 1, 1].item()))
+
+    dnn.BatchNormLayer cpu_norm = dnn.BatchNormLayer(
+        scale = neural.Parameter<float32>(value = tensor.ones<float32>([2])),
+        bias = neural.Parameter<float32>(value = tensor.zeros<float32>([2])),
+        running_mean = neural.State<tensor<float32>>(value = tensor.zeros<float32>([2])),
+        running_variance = neural.State<tensor<float32>>(value = tensor.ones<float32>([2])),
+        momentum = 0.1,
+        epsilon = 0.00001
+    )
+    dnn.BatchNormLayer gpu_norm = dnn.BatchNormLayer(
+        scale = neural.Parameter<float32>(value = tensor.ones<float32>([2], gpu = $GPU_INDEX)),
+        bias = neural.Parameter<float32>(value = tensor.zeros<float32>([2], gpu = $GPU_INDEX)),
+        running_mean = neural.State<tensor<float32>>(value = tensor.zeros<float32>([2], gpu = $GPU_INDEX)),
+        running_variance = neural.State<tensor<float32>>(value = tensor.ones<float32>([2], gpu = $GPU_INDEX)),
+        momentum = 0.1,
+        epsilon = 0.00001
+    )
+    tensor<float32> cpu_norm_input = tensor.ones<float32>([2, 2])
+    tensor<float32> gpu_norm_input = cpu_norm_input.gpu($GPU_INDEX)
+    tensor<float32> cpu_norm_out = cpu_norm.infer(cpu_norm_input)
+    tensor<float32> gpu_norm_out = gpu_norm.infer(gpu_norm_input).cpu()
+    print(near(cpu_norm_out[0, 0].item(), gpu_norm_out[0, 0].item()))
+
+    dnn.DropoutLayer cpu_drop = dnn.DropoutLayer(
+        rate = 0.5, rng = neural.State<uint64>(value = uint64(17))
+    )
+    dnn.DropoutLayer gpu_drop = dnn.DropoutLayer(
+        rate = 0.5, rng = neural.State<uint64>(value = uint64(17))
+    )
+    tensor<float32> drop_input = tensor.ones<float32>([2, 2])
+    tensor<float32> cpu_dropped = cpu_drop.forward(neural.track(drop_input)).untrack()
+    tensor<float32> gpu_dropped = gpu_drop.forward(neural.track(drop_input.gpu($GPU_INDEX))).untrack().cpu()
+    print(near(cpu_dropped[0, 0].item(), gpu_dropped[0, 0].item()))
+    print(near(cpu_dropped[1, 1].item(), gpu_dropped[1, 1].item()))
+    print(cpu_drop.rng.value == gpu_drop.rng.value)
+
+    LinearModel cpu_model = LinearModel(dense = cpu_linear)
+    LinearModel gpu_model = LinearModel(dense = gpu_linear)
+    tensor<float32> cpu_target = tensor.zeros<float32>([1, 1])
+    tensor<float32> gpu_target = cpu_target.gpu($GPU_INDEX)
+    neural.Gradients cpu_grad = neural.grad(
+        dnn.mse(cpu_model.dense.forward(neural.track(cpu_samples)), cpu_target)
+    )
+    neural.Gradients gpu_grad = neural.grad(
+        dnn.mse(gpu_model.dense.forward(neural.track(gpu_samples)), gpu_target)
+    )
+    dnn.SGDOptimizer cpu_sgd = try dnn.SGD(rate = 0.1)
+    dnn.SGDOptimizer gpu_sgd = try dnn.SGD(rate = 0.1)
+    cpu_sgd.step(&cpu_model, cpu_grad)
+    gpu_sgd.step(&gpu_model, gpu_grad)
+    print(near(
+        cpu_model.dense.weight.raw()[0, 0].item(),
+        gpu_model.dense.weight.raw()[0, 0].item()
+    ))
+
+    ConvModel cpu_conv_model = ConvModel(convolution = cpu_conv)
+    ConvModel gpu_conv_model = ConvModel(convolution = gpu_conv)
+    tensor<float32> cpu_zero_image = tensor.zeros<float32>([1, 1, 2, 2])
+    tensor<float32> gpu_zero_image = cpu_zero_image.gpu($GPU_INDEX)
+    neural.Gradients cpu_conv_grad = neural.grad(
+        dnn.mse(cpu_conv_model.convolution.forward(neural.track(cpu_pixels)), cpu_zero_image)
+    )
+    neural.Gradients gpu_conv_grad = neural.grad(
+        dnn.mse(gpu_conv_model.convolution.forward(neural.track(gpu_pixels)), gpu_zero_image)
+    )
+    dnn.SGDOptimizer cpu_conv_sgd = try dnn.SGD(rate = 0.1)
+    dnn.SGDOptimizer gpu_conv_sgd = try dnn.SGD(rate = 0.1)
+    cpu_conv_sgd.step(&cpu_conv_model, cpu_conv_grad)
+    gpu_conv_sgd.step(&gpu_conv_model, gpu_conv_grad)
+    print(near(
+        cpu_conv_model.convolution.weight.raw()[0, 0, 0, 0].item(),
+        gpu_conv_model.convolution.weight.raw()[0, 0, 0, 0].item()
+    ))
+
+    NormModel cpu_norm_model = NormModel(normalization = cpu_norm)
+    NormModel gpu_norm_model = NormModel(normalization = gpu_norm)
+    neural<float32> cpu_norm_train = cpu_norm_model.normalization.forward(neural.track(cpu_norm_input))
+    neural<float32> gpu_norm_train = gpu_norm_model.normalization.forward(neural.track(gpu_norm_input))
+    neural.Gradients cpu_norm_grad = neural.grad(neural.mean(cpu_norm_train * cpu_norm_train))
+    neural.Gradients gpu_norm_grad = neural.grad(neural.mean(gpu_norm_train * gpu_norm_train))
+    dnn.SGDOptimizer cpu_norm_sgd = try dnn.SGD(rate = 0.1)
+    dnn.SGDOptimizer gpu_norm_sgd = try dnn.SGD(rate = 0.1)
+    cpu_norm_sgd.step(&cpu_norm_model, cpu_norm_grad)
+    gpu_norm_sgd.step(&gpu_norm_model, gpu_norm_grad)
+    print(near(
+        cpu_norm_model.normalization.scale.raw()[0].item(),
+        gpu_norm_model.normalization.scale.raw()[0].item()
+    ))
+    print(near(
+        cpu_norm_model.normalization.running_mean.value[0].item(),
+        gpu_norm_model.normalization.running_mean.value.cpu()[0].item()
+    ))
+
+    dnn.LinearLayer cpu_adam_layer = dnn.LinearLayer(
+        weight = neural.Parameter<float32>(value = tensor.ones<float32>([1, 1])),
+        bias = neural.Parameter<float32>(value = tensor.zeros<float32>([1]))
+    )
+    dnn.LinearLayer gpu_adam_layer = dnn.LinearLayer(
+        weight = neural.Parameter<float32>(value = tensor.ones<float32>([1, 1], gpu = $GPU_INDEX)),
+        bias = neural.Parameter<float32>(value = tensor.zeros<float32>([1], gpu = $GPU_INDEX))
+    )
+    LinearModel cpu_adam_model = LinearModel(dense = cpu_adam_layer)
+    LinearModel gpu_adam_model = LinearModel(dense = gpu_adam_layer)
+    tensor<float32> cpu_one = tensor.ones<float32>([1, 1])
+    tensor<float32> gpu_one = cpu_one.gpu($GPU_INDEX)
+    tensor<float32> cpu_zero = tensor.zeros<float32>([1, 1])
+    tensor<float32> gpu_zero = cpu_zero.gpu($GPU_INDEX)
+    neural.Gradients cpu_adam_grad = neural.grad(
+        dnn.mse(cpu_adam_model.dense.forward(neural.track(cpu_one)), cpu_zero)
+    )
+    neural.Gradients gpu_adam_grad = neural.grad(
+        dnn.mse(gpu_adam_model.dense.forward(neural.track(gpu_one)), gpu_zero)
+    )
+    dnn.AdamOptimizer cpu_adam = try dnn.Adam(rate = 0.1)
+    dnn.AdamOptimizer gpu_adam = try dnn.Adam(rate = 0.1)
+    cpu_adam.step(&cpu_adam_model, cpu_adam_grad)
+    gpu_adam.step(&gpu_adam_model, gpu_adam_grad)
+    print(near(
+        cpu_adam_model.dense.weight.raw()[0, 0].item(),
+        gpu_adam_model.dense.weight.raw()[0, 0].item()
+    ))
+    print(cpu_adam.iteration.value == gpu_adam.iteration.value)
+    return 0
+
+auto result = run()
+match result
+    int
+        int ignored = result
+    error problem
+        print(problem)
+QUI
+
+output="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/dnn-real-gpu.qui")"
+expected="$(printf 'true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue')"
+if [[ "$output" != "$expected" ]]; then
+    echo "DNN real GPU numerical equivalence failed on gpu($GPU_INDEX)" >&2
+    printf '%s\n' "$output" >&2
+    exit 1
+fi
+
+echo "dnn real GPU integration: ok on gpu($GPU_INDEX)"

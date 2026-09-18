@@ -107,18 +107,27 @@ NCCL), Apple acceleration behind the Metal backend, and AMD acceleration behind
 the ROCm/HIP backend.
 
 Accelerator user-space libraries are owned by the DNN package, not Quidra core.
-When a DNN release ships NVIDIA acceleration, that exact DNN version fixes the
-cuDNN/cuBLAS/NCCL component versions, artifacts, and checksums it uses. DNN must
-not silently bind to a system-installed CUDA Toolkit or cuDNN. Quidra core owns
-the lower device/driver boundary; DNN owns the higher neural-library boundary.
-The current development backend has no hidden GPU fallback: unsupported GPU
-operations fail explicitly until the corresponding DNN accelerator backend is
-available.
+When a DNN release ships NVIDIA accelerator-library dispatch, that exact DNN
+version fixes the cuDNN/cuBLAS/NCCL component versions, artifacts, and checksums
+it uses. DNN must not silently bind to a system-installed CUDA Toolkit or cuDNN.
+Quidra core owns the lower device/driver boundary; DNN owns the higher
+neural-library boundary.
+
+The current development implementation does not require those optional
+accelerator libraries for correctness. Linear/affine, convolution, normalization,
+dropout/random masking, activations and reductions, autograd, SGD, and Adam can
+execute through Quidra's native GPU primitives on a compatible backend. An
+accelerator library may later replace an equivalent primitive with a faster
+backend dispatch, but it may not change placement semantics or introduce a CPU
+fallback. Unsupported backend/dtype combinations still fail explicitly.
 
 The released package dependency remains tied only to released Quidra versions.
 During development, CI additionally builds the current Quidra `feature` branch
-and checks the GPU placement/transfer contracts without changing
-`requires.quidra` to an unreleased branch.
+and checks GPU placement, inference, autograd, and optimizer contracts without
+changing `requires.quidra` to an unreleased branch. On a machine with a real
+GPU, `tests/real_gpu_integration.sh /path/to/quidra` runs CPU↔GPU numerical
+equivalence checks; set `QUIDRA_REQUIRE_REAL_GPU=1` in a hardware runner to
+make absence of a real GPU a test failure.
 
 ## Example
 
