@@ -248,5 +248,5 @@ AdamOptimizer | error Adam(
         beta2 = beta2,
         epsilon = epsilon,
         iteration = neural.State<int>(value = 0),
-        moments = neural.State<bin>(value = bin(0, fill = 0))
+        moments = neural.State<bin>(value = bin.fill(0, 0))
     )

@@ -379,7 +379,7 @@ int | error run()
         beta2 = 0.999,
         epsilon = 0.00000001,
         iteration = neural.State<int>(value = 0),
-        moments = neural.State<bin>(value = bin(0, fill = 0))
+        moments = neural.State<bin>(value = bin.fill(0, 0))
     )
     tensor<float32> sample = tensor.ones<float32>([1, 1], gpu = 0)
     tensor<float32> target = tensor.zeros<float32>([1, 1], gpu = 0)
