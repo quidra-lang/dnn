@@ -220,7 +220,7 @@ print(loss.untrack().item())
 
 neural.Gradients gradients = neural.grad(loss)
 float32 before = model.dense.weight.raw()[0, 0].item()
-dnn.SGDOptimizer optimizer = try dnn.SGD(rate = 0.1)
+dnn.SGDOptimizer optimizer = dnn.SGDOptimizer(rate = 0.1)
 optimizer.step(&model, gradients)
 float32 after = model.dense.weight.raw()[0, 0].item()
 print(after < before)
