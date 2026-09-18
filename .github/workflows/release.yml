@@ -1,0 +1,78 @@
+name: release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read package metadata
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="$(sed -n 's/^name = //p' quidra.package)"
+          version="$(sed -n 's/^version = //p' quidra.package)"
+          requirement="$(sed -n 's/^requires\.quidra = //p' quidra.package)"
+          baseline="$(printf '%s\n' "$requirement" | sed -n 's/^>=\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*$/\1/p')"
+          test "$name" = "dnn"
+          test -n "$version"
+          test -n "$baseline"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "baseline=$baseline" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure release tag is new
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v${{ steps.package.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "release tag $tag already exists" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          repository: quidra-lang/quidra
+          ref: v${{ steps.package.outputs.baseline }}
+          path: quidra
+
+      - name: Install Quidra dependencies
+        run: sudo apt-get update && sudo apt-get install -y llvm libcurl4-openssl-dev libpng-dev libjpeg-dev libtiff-dev libwebp-dev
+
+      - name: Build released Quidra baseline
+        run: cmake -S quidra -B quidra/build -DCMAKE_BUILD_TYPE=Release && cmake --build quidra/build --parallel
+
+      - name: Integration tests
+        run: bash tests/integration.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
+
+      - name: Additional tests
+        run: bash tests/contracts.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
+
+      - name: Check example
+        env:
+          QUIDRA_PACKAGE_PATH: ${{ github.workspace }}/..
+        run: quidra/build/quidra check examples/training.qui
+
+      - name: Create immutable tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v${{ steps.package.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" "$GITHUB_SHA" -m "dnn $tag"
+          git push origin "$tag"
+          gh release create "$tag" --target "$GITHUB_SHA" --title "dnn $tag" --generate-notes
