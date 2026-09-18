@@ -116,6 +116,55 @@ int | error run()
     print(near(cpu_dropped[1, 1].item(), gpu_dropped[1, 1].item()))
     print(cpu_drop.rng.value == gpu_drop.rng.value)
 
+    tensor<float32> cpu_activation = tensor.zeros<float32>([1, 2])
+    cpu_activation[0, 0] = float32(-1)
+    cpu_activation[0, 1] = float32(1)
+    tensor<float32> gpu_activation = cpu_activation.gpu($GPU_INDEX)
+
+    tensor<float32> cpu_relu = dnn.relu(neural.track(cpu_activation)).untrack()
+    tensor<float32> gpu_relu = dnn.relu(neural.track(gpu_activation)).untrack().cpu()
+    print(near(cpu_relu[0, 0].item(), gpu_relu[0, 0].item()) and near(cpu_relu[0, 1].item(), gpu_relu[0, 1].item()))
+
+    tensor<float32> cpu_tanh = dnn.tanh(neural.track(cpu_activation)).untrack()
+    tensor<float32> gpu_tanh = dnn.tanh(neural.track(gpu_activation)).untrack().cpu()
+    print(near(cpu_tanh[0, 0].item(), gpu_tanh[0, 0].item()) and near(cpu_tanh[0, 1].item(), gpu_tanh[0, 1].item()))
+
+    tensor<float32> cpu_sigmoid = dnn.sigmoid(neural.track(cpu_activation)).untrack()
+    tensor<float32> gpu_sigmoid = dnn.sigmoid(neural.track(gpu_activation)).untrack().cpu()
+    print(near(cpu_sigmoid[0, 0].item(), gpu_sigmoid[0, 0].item()) and near(cpu_sigmoid[0, 1].item(), gpu_sigmoid[0, 1].item()))
+
+    tensor<float32> cpu_softmax = dnn.softmax(neural.track(cpu_activation)).untrack()
+    tensor<float32> gpu_softmax = dnn.softmax(neural.track(gpu_activation)).untrack().cpu()
+    print(near(cpu_softmax[0, 0].item(), gpu_softmax[0, 0].item()) and near(cpu_softmax[0, 1].item(), gpu_softmax[0, 1].item()))
+
+    tensor<float32> cpu_gelu = dnn.gelu(neural.track(cpu_activation)).untrack()
+    tensor<float32> gpu_gelu = dnn.gelu(neural.track(gpu_activation)).untrack().cpu()
+    print(near(cpu_gelu[0, 0].item(), gpu_gelu[0, 0].item()) and near(cpu_gelu[0, 1].item(), gpu_gelu[0, 1].item()))
+
+    tensor<float32> cpu_probability = tensor.zeros<float32>([1, 2])
+    cpu_probability[0, 0] = float32(0.25)
+    cpu_probability[0, 1] = float32(0.75)
+    tensor<float32> gpu_probability = cpu_probability.gpu($GPU_INDEX)
+    tensor<float32> cpu_binary_target = tensor.zeros<float32>([1, 2])
+    cpu_binary_target[0, 1] = float32(1)
+    tensor<float32> gpu_binary_target = cpu_binary_target.gpu($GPU_INDEX)
+
+    float32 cpu_mse_loss = dnn.mse(neural.track(cpu_probability), cpu_binary_target).untrack().item()
+    float32 gpu_mse_loss = dnn.mse(neural.track(gpu_probability), gpu_binary_target).untrack().item()
+    print(near(cpu_mse_loss, gpu_mse_loss))
+
+    float32 cpu_bce = dnn.binary_cross_entropy(neural.track(cpu_probability), cpu_binary_target).untrack().item()
+    float32 gpu_bce = dnn.binary_cross_entropy(neural.track(gpu_probability), gpu_binary_target).untrack().item()
+    print(near(cpu_bce, gpu_bce))
+
+    float32 cpu_bce_logits = dnn.binary_cross_entropy_with_logits(neural.track(cpu_activation), cpu_binary_target).untrack().item()
+    float32 gpu_bce_logits = dnn.binary_cross_entropy_with_logits(neural.track(gpu_activation), gpu_binary_target).untrack().item()
+    print(near(cpu_bce_logits, gpu_bce_logits))
+
+    float32 cpu_cross_entropy = dnn.cross_entropy(neural.track(cpu_activation), cpu_binary_target).untrack().item()
+    float32 gpu_cross_entropy = dnn.cross_entropy(neural.track(gpu_activation), gpu_binary_target).untrack().item()
+    print(near(cpu_cross_entropy, gpu_cross_entropy))
+
     LinearModel cpu_model = LinearModel(dense = cpu_linear)
     LinearModel gpu_model = LinearModel(dense = gpu_linear)
     tensor<float32> cpu_target = tensor.zeros<float32>([1, 1])
@@ -213,7 +262,7 @@ match result
 QUI
 
 output="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/dnn-real-gpu.qui")"
-expected="$(printf 'true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue')"
+expected="$(printf 'true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue')"
 if [[ "$output" != "$expected" ]]; then
     echo "DNN real GPU numerical equivalence failed on gpu($GPU_INDEX)" >&2
     printf '%s\n' "$output" >&2
