@@ -1,8 +1,16 @@
 # dnn
 
-`dnn` is Quidra's first-party deep-neural-network package. It provides layers,
-activations, losses, and optimizers as ordinary Quidra source code on top of the
-standard `tensor` and `neural` foundations.
+`dnn` is Quidra's first-party deep-neural-network package. It owns DNN-specific
+semantics and policy: layers, convolution/linear behavior, accelerator-library
+selection, execution mode, activations, losses, and optimizers. The standard
+`neural` namespace is intentionally the smaller autodiff/parameter foundation.
+
+The current Core ABI still contains operand-level `neural.affine` and
+`neural.convolve2d` hooks so ordinary Quidra source can attach these operations
+to the built-in autograd graph without exposing backend details. Treat those
+hooks as an implementation boundary, not as the long-term owner of DNN
+semantics: new DNN operations belong here and should not expand `neural` unless
+a genuinely generic autodiff primitive is required.
 
 ## Install
 
