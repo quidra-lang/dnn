@@ -47,6 +47,7 @@ and epsilon values must be positive.
 
 - Activations: `relu`, `sigmoid`, `tanh`, `softmax`, `gelu`
 - Losses: `mse`, `cross_entropy`, `binary_cross_entropy`, `binary_cross_entropy_with_logits`
+- Multi-GPU: `all_reduce(&values)` performs an in-place sum over same-shaped `float32`/`float` tensors on distinct NVIDIA GPUs
 
 `forward` builds a differentiable `neural<T>` value. `BatchNormLayer.forward`
 updates the running statistics and `infer` is the read-only path over plain
@@ -137,19 +138,21 @@ NCCL), Apple acceleration behind the Metal backend, and AMD acceleration behind
 the ROCm/HIP backend.
 
 Accelerator user-space libraries are owned by the DNN package, not Quidra core.
-When a DNN release ships NVIDIA accelerator-library dispatch, that exact DNN
-version fixes the cuDNN/cuBLAS/NCCL component versions, artifacts, and checksums
-it uses. DNN must not silently bind to a system-installed CUDA Toolkit or cuDNN.
-Quidra core owns the lower device/driver boundary; DNN owns the higher
-neural-library boundary.
+A packaged DNN release is expected to pin the NVIDIA component versions,
+artifacts, and checksums it ships. The runtime never searches a system-installed
+cuDNN/cuBLAS/NCCL by default. A managed bundle directory can be supplied through
+`QUIDRA_DNN_NVIDIA_LIBRARY_PATH`; development environments may explicitly opt
+into system libraries with `QUIDRA_DNN_ALLOW_SYSTEM_NVIDIA_LIBS=1`. Quidra
+core owns the lower device/driver boundary; DNN owns the higher neural-library
+policy and public surface.
 
-The current development implementation does not require those optional
-accelerator libraries for correctness. Linear/affine, convolution, normalization,
-dropout/random masking, activations and reductions, autograd, SGD, and Adam can
-execute through Quidra's native GPU primitives on a compatible backend. An
-accelerator library may later replace an equivalent primitive with a faster
-backend dispatch, but it may not change placement semantics or introduce a CPU
-fallback. Unsupported backend/element-type combinations still fail explicitly.
+On NVIDIA GPUs, the current development backend dispatches Linear/affine forward
+and backward through cuBLAS when available, and Conv2D forward/backward through
+cuDNN. `fast` can benchmark convolution algorithms and caches the selected
+algorithm per device/shape; `deterministic` excludes nondeterministic cuDNN
+algorithms. If an accelerator operation is unavailable, the same operation
+falls back to Quidra's native GPU implementation, never to CPU. NCCL backs
+`all_reduce(&values)` for explicit same-process multi-GPU tensor reduction.
 
 The released package dependency remains tied only to released Quidra versions.
 During development, CI additionally builds the current Quidra `develop` branch

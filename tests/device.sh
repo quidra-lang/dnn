@@ -413,6 +413,28 @@ if [[ "$training_output" != "$training_expected" ]]; then
     exit 1
 fi
 
+cat > "$TMP/all-reduce-gpu.qui" <<'QUI'
+import dnn
+
+tensor<float32> first = tensor.ones<float32>([2], gpu = 0)
+tensor<float32> second = tensor.ones<float32>([2], gpu = 1) * float32(2)
+tensor<float32>[] values = [first, second]
+dnn.all_reduce(&values)
+tensor<float32> first_cpu = values[0].cpu()
+tensor<float32> second_cpu = values[1].cpu()
+print(first_cpu[0].item())
+print(first_cpu[1].item())
+print(second_cpu[0].item())
+print(second_cpu[1].item())
+QUI
+all_reduce_output="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/all-reduce-gpu.qui")"
+all_reduce_expected="$(printf '3.0\n3.0\n3.0\n3.0')"
+if [[ "$all_reduce_output" != "$all_reduce_expected" ]]; then
+    echo "unexpected fake-GPU all-reduce output:" >&2
+    printf '%s\n' "$all_reduce_output" >&2
+    exit 1
+fi
+
 equivalence_output="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$REPOSITORY_ROOT/tests/fake_gpu_equivalence.qui")"
 equivalence_expected="$(printf 'true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue')"
 if [[ "$equivalence_output" != "$equivalence_expected" ]]; then
