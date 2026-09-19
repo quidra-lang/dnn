@@ -81,6 +81,39 @@ int | error run()
     tensor<float32> gpu_conv_out = gpu_conv.forward(gpu_pixels).cpu()
     print(near(cpu_conv_out[0, 0, 1, 1].item(), gpu_conv_out[0, 0, 1, 1].item()))
 
+    dnn.Conv2DLayer cpu_conv3 = dnn.Conv2DLayer(
+        weight = neural.Parameter<float32>(value = tensor.ones<float32>([2, 2, 3, 3])),
+        bias = neural.Parameter<float32>(value = tensor.zeros<float32>([2])),
+        stride = 2,
+        padding = 1
+    )
+    dnn.Conv2DLayer gpu_conv3 = dnn.Conv2DLayer(
+        weight = neural.Parameter<float32>(value = tensor.ones<float32>([2, 2, 3, 3], gpu = $GPU_INDEX)),
+        bias = neural.Parameter<float32>(value = tensor.zeros<float32>([2], gpu = $GPU_INDEX)),
+        stride = 2,
+        padding = 1
+    )
+    tensor<float32> cpu_conv3_input = tensor.ones<float32>([2, 2, 5, 7])
+    tensor<float32> gpu_conv3_input = cpu_conv3_input.gpu($GPU_INDEX)
+    tensor<float32> cpu_conv3_out = cpu_conv3.forward(cpu_conv3_input)
+    tensor<float32> gpu_conv3_out = gpu_conv3.forward(gpu_conv3_input).cpu()
+    print(
+        cpu_conv3_out.shape()[2] == gpu_conv3_out.shape()[2] and
+        cpu_conv3_out.shape()[3] == gpu_conv3_out.shape()[3] and
+        near(cpu_conv3_out[0, 0, 0, 0].item(), gpu_conv3_out[0, 0, 0, 0].item()) and
+        near(cpu_conv3_out[1, 1, 1, 1].item(), gpu_conv3_out[1, 1, 1, 1].item())
+    )
+    dnn.mode(dnn.deterministic)
+    tensor<float32> deterministic_first = gpu_conv3.forward(gpu_conv3_input).cpu()
+    tensor<float32> deterministic_second = gpu_conv3.forward(gpu_conv3_input).cpu()
+    print(
+        deterministic_first[0, 0, 0, 0].item() ==
+        deterministic_second[0, 0, 0, 0].item() and
+        deterministic_first[1, 1, 1, 1].item() ==
+        deterministic_second[1, 1, 1, 1].item()
+    )
+    dnn.mode(dnn.fast)
+
     dnn.BatchNormLayer cpu_norm = dnn.BatchNormLayer(
         scale = neural.Parameter<float32>(value = tensor.ones<float32>([2])),
         bias = neural.Parameter<float32>(value = tensor.zeros<float32>([2])),
@@ -203,6 +236,35 @@ int | error run()
         gpu_conv_model.convolution.weight.raw()[0, 0, 0, 0].item()
     ))
 
+    ConvModel cpu_conv3_model = ConvModel(convolution = cpu_conv3)
+    ConvModel gpu_conv3_model = ConvModel(convolution = gpu_conv3)
+    tensor<float32> cpu_conv3_target = tensor.zeros<float32>([2, 2, 3, 4])
+    tensor<float32> gpu_conv3_target = cpu_conv3_target.gpu($GPU_INDEX)
+    neural.Gradients cpu_conv3_grad = neural.grad(
+        dnn.mse(
+            cpu_conv3_model.convolution.forward(neural.track(cpu_conv3_input)),
+            cpu_conv3_target
+        )
+    )
+    neural.Gradients gpu_conv3_grad = neural.grad(
+        dnn.mse(
+            gpu_conv3_model.convolution.forward(neural.track(gpu_conv3_input)),
+            gpu_conv3_target
+        )
+    )
+    dnn.SGDOptimizer cpu_conv3_sgd = try dnn.SGD(rate = 0.01)
+    dnn.SGDOptimizer gpu_conv3_sgd = try dnn.SGD(rate = 0.01)
+    cpu_conv3_sgd.step(&cpu_conv3_model, cpu_conv3_grad)
+    gpu_conv3_sgd.step(&gpu_conv3_model, gpu_conv3_grad)
+    print(near(
+        cpu_conv3_model.convolution.weight.raw()[0, 0, 1, 1].item(),
+        gpu_conv3_model.convolution.weight.raw()[0, 0, 1, 1].item()
+    ))
+    print(near(
+        cpu_conv3_model.convolution.bias.raw()[1].item(),
+        gpu_conv3_model.convolution.bias.raw()[1].item()
+    ))
+
     NormModel cpu_norm_model = NormModel(normalization = cpu_norm)
     NormModel gpu_norm_model = NormModel(normalization = gpu_norm)
     neural<float32> cpu_norm_train = cpu_norm_model.normalization.forward(neural.track(cpu_norm_input))
@@ -276,7 +338,7 @@ match result
 QUI
 
 output="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/dnn-real-gpu.qui")"
-expected="$(printf 'true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue')"
+expected="$(printf 'true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue')"
 if [[ "$output" != "$expected" ]]; then
     echo "DNN real GPU numerical equivalence failed on gpu($GPU_INDEX)" >&2
     printf '%s\n' "$output" >&2
