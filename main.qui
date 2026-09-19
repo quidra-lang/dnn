@@ -1,11 +1,10 @@
-extern void dnn_runtime_fast() = "dnn_quidra_fast"
-extern void dnn_runtime_deterministic() = "dnn_quidra_deterministic"
+import bridge = "./runtime.qui"
 
 void fast()
-    dnn_runtime_fast()
+    bridge.fast()
 
 void deterministic()
-    dnn_runtime_deterministic()
+    bridge.deterministic()
 
 void mode(fn<void>() selected)
     selected()

@@ -84,6 +84,21 @@ if [[ "$contracts_output" != "$contracts_expected" ]]; then
     exit 1
 fi
 
+cat > "$TMP/private-bridge.qui" <<'QUI'
+import dnn
+dnn.dnn_runtime_fast()
+QUI
+set +e
+QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" check "$TMP/private-bridge.qui" --json \
+    >"$TMP/private-bridge.out" 2>&1
+bridge_status=$?
+set -e
+if [[ "$bridge_status" -ne 1 ]]; then
+    echo "DNN runtime bridge leaked through the public package API" >&2
+    exit 1
+fi
+grep -Eq 'UNKNOWN_MODULE_MEMBER|UNKNOWN_NAME' "$TMP/private-bridge.out"
+
 cat > "$TMP/logits.qui" <<'QUI'
 import dnn
 
