@@ -82,8 +82,8 @@ Conv2DLayer | error Conv2D(
 class BatchNormLayer
     neural.Parameter<float32> scale
     neural.Parameter<float32> bias
-    neural.State<tensor<float32>> running_mean
-    neural.State<tensor<float32>> running_variance
+    private neural.State<tensor<float32>> running_mean
+    private neural.State<tensor<float32>> running_variance
     float momentum
     float epsilon
 
@@ -129,7 +129,7 @@ BatchNormLayer | error BatchNorm(
 
 class DropoutLayer
     float rate
-    neural.State<uint64> rng
+    private neural.State<uint64> rng
 
     neural<float32> forward(neural<float32> value)
         return neural.random_mask(value, rng, rate = rate)
@@ -227,8 +227,8 @@ class AdamOptimizer
     float beta1
     float beta2
     float epsilon
-    neural.State<int> iteration
-    neural.State<bin> moments
+    private neural.State<int> iteration
+    private neural.State<bin> moments
 
     void step<M>(M &model, neural.Gradients gradients)
         neural.moment_update(

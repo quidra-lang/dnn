@@ -298,7 +298,7 @@ int | error run()
     neural<float32> normalized = normalization.forward(neural.track(norm_values))
     neural.Gradients norm_gradients = neural.grad(neural.mean(normalized * normalized))
     print(normalized.untrack().shape()[1])
-    print(normalization.running_mean.value[0].item() > float32(0))
+    print(normalization.infer(norm_values).shape()[1] == 2)
 
     dnn.DropoutLayer dropout = dnn.DropoutLayer(
         rate = 0.5,
@@ -307,7 +307,7 @@ int | error run()
     neural<float32> dropped = dropout.forward(neural.track(norm_values))
     neural.Gradients dropout_gradients = neural.grad(neural.mean(dropped * dropped))
     print(dropped.untrack().shape()[0])
-    print(dropout.rng.value != uint64(17))
+    print(dropout.infer(norm_values)[0, 0].item() == float32(1))
 
     ParameterModel cpu_dropout_model = ParameterModel(
         value = neural.Parameter<float32>(
@@ -387,13 +387,13 @@ int | error run()
     neural<float32> prediction = model.dense.forward(neural.track(sample))
     neural.Gradients gradients = neural.grad(dnn.mse(prediction, target))
     adam.step(&model, gradients)
-    print(adam.iteration.value)
+    print(model.dense.weight.raw()[0, 0].item() != before)
     float32 first_after = model.dense.weight.raw()[0, 0].item()
     print(first_after < before)
     neural<float32> second_prediction = model.dense.forward(neural.track(sample))
     neural.Gradients second_gradients = neural.grad(dnn.mse(second_prediction, target))
     adam.step(&model, second_gradients)
-    print(adam.iteration.value)
+    print(model.dense.weight.raw()[0, 0].item() != first_after)
     print(model.dense.weight.raw()[0, 0].item() < first_after)
     return 0
 
@@ -406,7 +406,7 @@ match result
 QUI
 
 training_output="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/training-gpu.qui")"
-training_expected="$(printf 'true\n2\ntrue\n2\ntrue\ntrue\ntrue\n1\ntrue\n2\ntrue')"
+training_expected="$(printf 'true\n2\ntrue\n2\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue')"
 if [[ "$training_output" != "$training_expected" ]]; then
     echo "unexpected GPU training output:" >&2
     printf '%s\n' "$training_output" >&2

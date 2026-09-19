@@ -147,7 +147,9 @@ int | error run()
     tensor<float32> gpu_dropped = gpu_drop.forward(neural.track(drop_input.gpu($GPU_INDEX))).untrack().cpu()
     print(near(cpu_dropped[0, 0].item(), gpu_dropped[0, 0].item()))
     print(near(cpu_dropped[1, 1].item(), gpu_dropped[1, 1].item()))
-    print(cpu_drop.rng.value == gpu_drop.rng.value)
+    tensor<float32> cpu_dropped_next = cpu_drop.forward(neural.track(drop_input)).untrack()
+    tensor<float32> gpu_dropped_next = gpu_drop.forward(neural.track(drop_input.gpu($GPU_INDEX))).untrack().cpu()
+    print(near(cpu_dropped_next[0, 1].item(), gpu_dropped_next[0, 1].item()))
 
     tensor<float32> cpu_activation = tensor.zeros<float32>([1, 2])
     cpu_activation[0, 0] = float32(-1)
@@ -279,10 +281,9 @@ int | error run()
         cpu_norm_model.normalization.scale.raw()[0].item(),
         gpu_norm_model.normalization.scale.raw()[0].item()
     ))
-    print(near(
-        cpu_norm_model.normalization.running_mean.value[0].item(),
-        gpu_norm_model.normalization.running_mean.value.cpu()[0].item()
-    ))
+    tensor<float32> cpu_norm_infer = cpu_norm_model.normalization.infer(cpu_norm_input)
+    tensor<float32> gpu_norm_infer = gpu_norm_model.normalization.infer(gpu_norm_input).cpu()
+    print(near(cpu_norm_infer[0, 0].item(), gpu_norm_infer[0, 0].item()))
 
     dnn.LinearLayer cpu_adam_layer = dnn.LinearLayer(
         weight = neural.Parameter<float32>(value = tensor.ones<float32>([1, 1])),
@@ -312,7 +313,10 @@ int | error run()
         cpu_adam_model.dense.weight.raw()[0, 0].item(),
         gpu_adam_model.dense.weight.raw()[0, 0].item()
     ))
-    print(cpu_adam.iteration.value == gpu_adam.iteration.value)
+    print(near(
+        cpu_adam_model.dense.bias.raw()[0].item(),
+        gpu_adam_model.dense.bias.raw()[0].item()
+    ))
 
     neural.Gradients cpu_adam_grad2 = neural.grad(
         dnn.mse(cpu_adam_model.dense.forward(neural.track(cpu_one)), cpu_zero)
@@ -326,7 +330,10 @@ int | error run()
         cpu_adam_model.dense.weight.raw()[0, 0].item(),
         gpu_adam_model.dense.weight.raw()[0, 0].item()
     ))
-    print(cpu_adam.iteration.value == 2 and gpu_adam.iteration.value == 2)
+    print(near(
+        cpu_adam_model.dense.bias.raw()[0].item(),
+        gpu_adam_model.dense.bias.raw()[0].item()
+    ))
     return 0
 
 auto result = run()
