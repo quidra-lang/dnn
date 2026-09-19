@@ -9,7 +9,7 @@ void deterministic()
 void mode(fn<void>() selected)
     selected()
 
-void all_reduce<T>(tensor<T>[] &values)
+void all_reduce_sum<T>(tensor<T>[] &values)
     neural.all_reduce_sum(&values)
 
 tensor<float32> uniform_weights(int count, float bound, int seed)

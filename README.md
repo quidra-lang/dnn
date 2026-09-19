@@ -47,7 +47,7 @@ and epsilon values must be positive.
 
 - Activations: `relu`, `sigmoid`, `tanh`, `softmax`, `gelu`
 - Losses: `mse`, `cross_entropy`, `binary_cross_entropy`, `binary_cross_entropy_with_logits`
-- Multi-GPU: `all_reduce(&values)` performs an in-place sum over same-shaped `float32`/`float` tensors on distinct NVIDIA GPUs
+- Multi-GPU: `all_reduce_sum(&values)` performs an in-place sum over same-shaped `float32`/`float` tensors on distinct NVIDIA GPUs
 
 `forward` builds a differentiable `neural<T>` value. `BatchNormLayer.forward`
 updates the running statistics and `infer` is the read-only path over plain
@@ -152,7 +152,7 @@ cuDNN. `fast` can benchmark convolution algorithms and caches the selected
 algorithm per device/shape; `deterministic` excludes nondeterministic cuDNN
 algorithms. If an accelerator operation is unavailable, the same operation
 falls back to Quidra's native GPU implementation, never to CPU. NCCL backs
-`all_reduce(&values)` for explicit same-process multi-GPU tensor reduction.
+`all_reduce_sum(&values)` for explicit same-process multi-GPU tensor reduction.
 
 The released package dependency remains tied only to released Quidra versions.
 During development, CI additionally builds the current Quidra `develop` branch

@@ -419,7 +419,7 @@ import dnn
 tensor<float32> first = tensor.ones<float32>([2], gpu = 0)
 tensor<float32> second = tensor.ones<float32>([2], gpu = 1) * float32(2)
 tensor<float32>[] values = [first, second]
-dnn.all_reduce(&values)
+dnn.all_reduce_sum(&values)
 tensor<float32> first_cpu = values[0].cpu()
 tensor<float32> second_cpu = values[1].cpu()
 print(first_cpu[0].item())
