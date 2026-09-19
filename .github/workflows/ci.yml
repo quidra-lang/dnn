@@ -42,7 +42,7 @@ jobs:
           ref: develop
           path: quidra
       - name: Install Quidra dependencies
-        run: sudo apt-get update && sudo apt-get install -y llvm libcurl4-openssl-dev libpng-dev libjpeg-dev libtiff-dev libwebp-dev
+        run: sudo apt-get update && sudo apt-get install -y llvm libcurl4-openssl-dev libpng-dev libjpeg-dev libtiff-dev libwebp-dev libavformat-dev libavcodec-dev libavutil-dev libswscale-dev
       - name: Build Quidra develop
         run: cmake -S quidra -B quidra/build -DCMAKE_BUILD_TYPE=Release -DQUIDRA_ENABLE_TEST_GPU_BACKEND=ON && cmake --build quidra/build --parallel
       - name: Integration tests
@@ -70,9 +70,9 @@ jobs:
           ref: develop
           path: quidra
       - name: Install Quidra dependencies
-        run: brew install curl libpng jpeg-turbo libtiff webp
+        run: brew install curl libpng jpeg-turbo libtiff webp ffmpeg
       - name: Build Quidra develop
-        run: cmake -S quidra -B quidra/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(brew --prefix curl);$(brew --prefix libpng);$(brew --prefix jpeg-turbo);$(brew --prefix libtiff);$(brew --prefix webp)" && cmake --build quidra/build --parallel
+        run: cmake -S quidra -B quidra/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(brew --prefix curl);$(brew --prefix libpng);$(brew --prefix jpeg-turbo);$(brew --prefix libtiff);$(brew --prefix webp);$(brew --prefix ffmpeg)" && cmake --build quidra/build --parallel
       - name: Real Metal GPU numerical integration
         env:
           QUIDRA_REQUIRE_REAL_GPU: "1"
