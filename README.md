@@ -119,7 +119,7 @@ dropout/random masking, activations and reductions, autograd, SGD, and Adam can
 execute through Quidra's native GPU primitives on a compatible backend. An
 accelerator library may later replace an equivalent primitive with a faster
 backend dispatch, but it may not change placement semantics or introduce a CPU
-fallback. Unsupported backend/dtype combinations still fail explicitly.
+fallback. Unsupported backend/element-type combinations still fail explicitly.
 
 The released package dependency remains tied only to released Quidra versions.
 During development, CI additionally builds the current Quidra `feature` branch
