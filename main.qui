@@ -7,6 +7,9 @@ void fast()
 void deterministic()
     dnn_runtime_deterministic()
 
+void mode(fn<void>() selected)
+    selected()
+
 tensor<float32> uniform_weights(int count, float bound, int seed)
     tensor<float32> values = tensor.zeros<float32>([count])
     random.Generator generator = random.generator(seed = seed)

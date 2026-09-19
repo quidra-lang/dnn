@@ -96,14 +96,18 @@ For reproducibility-sensitive runs, switch the process-wide DNN execution mode
 once near program startup:
 
 ```quidra
-dnn.deterministic()
+dnn.mode(dnn.deterministic)
 ```
 
 To switch back explicitly:
 
 ```quidra
-dnn.fast()
+dnn.mode(dnn.fast)
 ```
+
+The `mode` call accepts the two capture-free policy functions directly, so the
+public surface stays compact without a separate `Mode` type or a collection of
+backend-specific flags.
 
 The mode is intentionally a two-state policy instead of a collection of
 independent backend flags. `deterministic` restricts accelerated backends to
