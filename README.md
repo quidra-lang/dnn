@@ -85,6 +85,32 @@ and returns a rank-1 `tensor<float32>` of `count` values in `(-bound, +bound)`;
 reshape it to build a layer with your own initialization, or construct
 `LinearLayer` and `Conv2DLayer` from tensors you supply.
 
+## Execution mode
+
+DNN is performance-first by default. Programs normally do not need to set a
+mode: the default is `fast`, which permits backend autotuning and the fastest
+supported algorithms, including nondeterministic algorithms when they are
+faster.
+
+For reproducibility-sensitive runs, switch the process-wide DNN execution mode
+once near program startup:
+
+```quidra
+dnn.deterministic()
+```
+
+To switch back explicitly:
+
+```quidra
+dnn.fast()
+```
+
+The mode is intentionally a two-state policy instead of a collection of
+independent backend flags. `deterministic` restricts accelerated backends to
+deterministic algorithms; `fast` permits the backend to choose the fastest
+valid algorithm. Explicit Quidra RNG state, such as a Dropout seed, remains
+separate from algorithm determinism and is never replaced by a hidden GPU RNG.
+
 ## Device placement
 
 DNN follows Quidra tensor placement exactly. It never inserts CPU↔GPU or
@@ -122,7 +148,7 @@ backend dispatch, but it may not change placement semantics or introduce a CPU
 fallback. Unsupported backend/element-type combinations still fail explicitly.
 
 The released package dependency remains tied only to released Quidra versions.
-During development, CI additionally builds the current Quidra `feature` branch
+During development, CI additionally builds the current Quidra `develop` branch
 and checks GPU placement, inference, autograd, and optimizer contracts without
 changing `requires.quidra` to an unreleased branch. On a machine with a real
 GPU, `tests/real_gpu_integration.sh /path/to/quidra` runs CPU↔GPU numerical

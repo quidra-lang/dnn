@@ -31,7 +31,7 @@ jobs:
         run: quidra/build/quidra check examples/training.qui
 
   feature-core:
-    name: Quidra feature compatibility
+    name: Quidra develop compatibility
     if: github.ref == 'refs/heads/develop' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -39,11 +39,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: quidra-lang/quidra
-          ref: v0.3.0
+          ref: develop
           path: quidra
       - name: Install Quidra dependencies
         run: sudo apt-get update && sudo apt-get install -y llvm libcurl4-openssl-dev libpng-dev libjpeg-dev libtiff-dev libwebp-dev
-      - name: Build Quidra feature
+      - name: Build Quidra develop
         run: cmake -S quidra -B quidra/build -DCMAKE_BUILD_TYPE=Release -DQUIDRA_ENABLE_TEST_GPU_BACKEND=ON && cmake --build quidra/build --parallel
       - name: Integration tests
         run: bash tests/integration.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
@@ -67,11 +67,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: quidra-lang/quidra
-          ref: v0.3.0
+          ref: develop
           path: quidra
       - name: Install Quidra dependencies
         run: brew install curl libpng jpeg-turbo libtiff webp
-      - name: Build Quidra feature
+      - name: Build Quidra develop
         run: cmake -S quidra -B quidra/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(brew --prefix curl);$(brew --prefix libpng);$(brew --prefix jpeg-turbo);$(brew --prefix libtiff);$(brew --prefix webp)" && cmake --build quidra/build --parallel
       - name: Real Metal GPU numerical integration
         env:

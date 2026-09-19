@@ -10,6 +10,10 @@ trap 'rm -rf "$TMP"' EXIT
 cat > "$TMP/contracts.qui" <<'QUI'
 import dnn
 
+dnn.fast()
+dnn.deterministic()
+dnn.fast()
+
 bool linear_rejected = false
 dnn.LinearLayer | error bad_linear = dnn.Linear(features_in = 2, features_out = 0)
 match bad_linear

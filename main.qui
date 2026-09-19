@@ -1,3 +1,12 @@
+extern void dnn_runtime_fast() = "dnn_quidra_fast"
+extern void dnn_runtime_deterministic() = "dnn_quidra_deterministic"
+
+void fast()
+    dnn_runtime_fast()
+
+void deterministic()
+    dnn_runtime_deterministic()
+
 tensor<float32> uniform_weights(int count, float bound, int seed)
     tensor<float32> values = tensor.zeros<float32>([count])
     random.Generator generator = random.generator(seed = seed)
