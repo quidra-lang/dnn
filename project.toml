@@ -10,7 +10,7 @@
 name = "quidra-dnn"
 import = "dnn"
 display_name = "Quidra DNN"
-version = "0.2.0"
+version = "0.3.0"
 repository = "https://github.com/quidra-lang/dnn"
 
 [requires]
