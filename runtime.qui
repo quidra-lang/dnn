@@ -1,0 +1,2 @@
+extern void fast() = "dnn_quidra_fast"
+extern void deterministic() = "dnn_quidra_deterministic"

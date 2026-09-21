@@ -1,0 +1,113 @@
+name: real-gpu-hardware
+
+on:
+  workflow_dispatch:
+    inputs:
+      backend:
+        description: Hardware backend to validate
+        required: true
+        default: nvidia
+        type: choice
+        options:
+          - nvidia
+          - nvidia-multi
+          - amd
+          - all
+  push:
+    branches:
+      - develop
+    paths:
+      - ".github/workflows/real-gpu-hardware.yml"
+      - "main.qui"
+      - "runtime.qui"
+      - "tests/real_gpu_integration.sh"
+      - "nvidia/**"
+      - "scripts/materialize_nvidia_bundle.py"
+
+concurrency:
+  group: dnn-real-gpu-hardware-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nvidia:
+    if: >-
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.backend == 'nvidia' || inputs.backend == 'all')) ||
+      (github.event_name == 'push' && vars.QUIDRA_NVIDIA_GPU_CI == '1')
+    runs-on: [self-hosted, linux, x64, quidra-nvidia]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: quidra-lang/quidra
+          ref: develop
+          path: quidra
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build clang llvm libcurl4-openssl-dev libpng-dev libjpeg-dev libtiff-dev libwebp-dev ffmpeg libavformat-dev libavcodec-dev libavutil-dev libswscale-dev
+      - name: Build Quidra
+        run: cmake -S quidra -B quidra/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DQUIDRA_WARNINGS_AS_ERRORS=ON && cmake --build quidra/build --parallel
+      - name: Materialize pinned NVIDIA DNN bundle
+        run: |
+          python3 scripts/materialize_nvidia_bundle.py --platform linux-x86_64 --output "$RUNNER_TEMP/dnn-bundle"
+          python3 tests/validate_nvidia_bundle.py --require-populated "$RUNNER_TEMP/dnn-bundle"
+      - name: Require NVIDIA hardware and run DNN numerical integration
+        env:
+          QUIDRA_REQUIRE_REAL_GPU: "1"
+          QUIDRA_REQUIRE_GPU_BACKEND: "NVIDIA"
+          QUIDRA_DNN_NVIDIA_LIBRARY_PATH: ${{ runner.temp }}/dnn-bundle/nvidia/lib
+        run: bash tests/real_gpu_integration.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
+
+  nvidia-multi:
+    if: >-
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.backend == 'nvidia-multi' || inputs.backend == 'all')) ||
+      (github.event_name == 'push' && vars.QUIDRA_NVIDIA_MULTI_GPU_CI == '1')
+    runs-on: [self-hosted, linux, x64, quidra-nvidia-multi]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: quidra-lang/quidra
+          ref: develop
+          path: quidra
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build clang llvm libcurl4-openssl-dev libpng-dev libjpeg-dev libtiff-dev libwebp-dev ffmpeg libavformat-dev libavcodec-dev libavutil-dev libswscale-dev
+      - name: Build Quidra
+        run: cmake -S quidra -B quidra/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DQUIDRA_WARNINGS_AS_ERRORS=ON && cmake --build quidra/build --parallel
+      - name: Materialize pinned NVIDIA DNN bundle
+        run: |
+          python3 scripts/materialize_nvidia_bundle.py --platform linux-x86_64 --output "$RUNNER_TEMP/dnn-bundle"
+          python3 tests/validate_nvidia_bundle.py --require-populated "$RUNNER_TEMP/dnn-bundle"
+      - name: Require two NVIDIA GPUs and run NCCL integration
+        env:
+          QUIDRA_REQUIRE_REAL_GPU: "1"
+          QUIDRA_REQUIRE_GPU_BACKEND: "NVIDIA"
+          QUIDRA_REQUIRE_MULTI_GPU: "1"
+          QUIDRA_DNN_NVIDIA_LIBRARY_PATH: ${{ runner.temp }}/dnn-bundle/nvidia/lib
+        run: bash tests/real_gpu_integration.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
+
+  amd:
+    if: >-
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.backend == 'amd' || inputs.backend == 'all')) ||
+      (github.event_name == 'push' && vars.QUIDRA_AMD_GPU_CI == '1')
+    runs-on: [self-hosted, linux, x64, quidra-amd]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: quidra-lang/quidra
+          ref: develop
+          path: quidra
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build clang llvm libcurl4-openssl-dev libpng-dev libjpeg-dev libtiff-dev libwebp-dev ffmpeg libavformat-dev libavcodec-dev libavutil-dev libswscale-dev
+      - name: Build Quidra
+        run: cmake -S quidra -B quidra/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DQUIDRA_WARNINGS_AS_ERRORS=ON && cmake --build quidra/build --parallel
+      - name: Require AMD hardware and run DNN numerical integration
+        env:
+          QUIDRA_REQUIRE_REAL_GPU: "1"
+          QUIDRA_REQUIRE_GPU_BACKEND: "AMD"
+        run: bash tests/real_gpu_integration.sh "$GITHUB_WORKSPACE/quidra/build/quidra"

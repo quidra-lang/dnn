@@ -1,0 +1,84 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  managed-nvidia-bundle:
+    name: Managed NVIDIA bundle contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate selected NVIDIA source artifacts
+        run: python3 tests/validate_nvidia_sources.py
+      - name: Validate bundle metadata and checksums
+        run: python3 tests/validate_nvidia_bundle.py
+      - name: Bundle validator regressions
+        run: python3 tests/nvidia_bundle_validator.py
+      - name: Bundle materializer regressions
+        run: python3 tests/nvidia_bundle_materializer.py
+
+  feature-core:
+    name: Quidra main compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: quidra-lang/quidra
+          ref: main
+          path: quidra
+      - name: Restore Quidra compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ runner.os }}-quidra-${{ hashFiles('quidra/CMakeLists.txt', 'quidra/src/**', 'quidra/include/**') }}
+          restore-keys: |
+            ccache-${{ runner.os }}-quidra-
+
+      - name: Install Quidra dependencies
+        run: sudo apt-get update && sudo apt-get install -y ccache clang llvm libcurl4-openssl-dev libpng-dev libjpeg-dev libtiff-dev libwebp-dev libavformat-dev libavcodec-dev libavutil-dev libswscale-dev
+      - name: Build Quidra main
+        run: cmake -S quidra -B quidra/build -DCMAKE_BUILD_TYPE=Release -DQUIDRA_ENABLE_TEST_GPU_BACKEND=ON -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && cmake --build quidra/build --parallel
+      - name: Integration tests
+        run: bash tests/integration.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
+      - name: Contract and stability tests
+        run: bash tests/contracts.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
+      - name: Device placement contracts
+        run: bash tests/device.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
+      - name: Real GPU numerical integration when available
+        run: bash tests/real_gpu_integration.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
+      - name: Check example
+        env:
+          QUIDRA_PACKAGE_PATH: ${{ github.workspace }}/..
+        run: quidra/build/quidra check examples/training.qui
+
+
+  metal-real-gpu:
+    name: Metal real GPU integration
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: quidra-lang/quidra
+          ref: main
+          path: quidra
+      - name: Restore Quidra compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ runner.os }}-quidra-${{ hashFiles('quidra/CMakeLists.txt', 'quidra/src/**', 'quidra/include/**') }}
+          restore-keys: |
+            ccache-${{ runner.os }}-quidra-
+
+      - name: Install Quidra dependencies
+        run: brew install ccache curl libpng jpeg-turbo libtiff webp ffmpeg
+      - name: Build Quidra main
+        run: cmake -S quidra -B quidra/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(brew --prefix curl);$(brew --prefix libpng);$(brew --prefix jpeg-turbo);$(brew --prefix libtiff);$(brew --prefix webp);$(brew --prefix ffmpeg)" -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && cmake --build quidra/build --parallel
+      - name: Real Metal GPU numerical integration
+        env:
+          QUIDRA_REQUIRE_REAL_GPU: "1"
+          QUIDRA_REQUIRE_GPU_BACKEND: "Metal"
+        run: bash tests/real_gpu_integration.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
