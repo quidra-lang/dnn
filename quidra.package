@@ -3,4 +3,4 @@ version = 0.2.0
 repository = https://github.com/quidra-lang/dnn
 asset.linux-x86_64 = https://github.com/quidra-lang/dnn/releases/download/v0.2.0/dnn-nvidia-linux-x86_64.tar.xz
 asset.windows-x86_64 = https://github.com/quidra-lang/dnn/releases/download/v0.2.0/dnn-nvidia-windows-x86_64.zip
-requires.quidra = >=0.1.0 <0.3.0
+requires.quidra = >=0.2.0 <0.3.0
