@@ -8,13 +8,20 @@ import hashlib
 import json
 import os
 import shutil
+import sys
 import tarfile
 import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import toml_subset  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
+
+_PACKAGE = toml_subset.load(ROOT / "project.toml")["package"]
+USER_AGENT = f"{_PACKAGE['display_name'].replace(' ', '-')}/{_PACKAGE['version']}"
 
 
 def fail(message: str) -> None:
@@ -37,7 +44,7 @@ def sha256(path: Path) -> str:
 
 
 def download_url(url: str, output: Path) -> None:
-    request = urllib.request.Request(url, headers={"User-Agent": "Quidra-DNN/0.1.0"})
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=30) as response, output.open("wb") as target:
         shutil.copyfileobj(response, target, length=1024 * 1024)
 
@@ -53,7 +60,7 @@ def resolve_source_url(component: dict[str, object]) -> str:
         project = str(component["project"])
         version = str(component["version"])
         api = f"https://pypi.org/pypi/{project}/{version}/json"
-        request = urllib.request.Request(api, headers={"User-Agent": "Quidra-DNN/0.1.0"})
+        request = urllib.request.Request(api, headers={"User-Agent": USER_AGENT})
         with urllib.request.urlopen(request, timeout=30) as response:
             metadata = json.load(response)
         for candidate in metadata.get("urls", []):

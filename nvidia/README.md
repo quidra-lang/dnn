@@ -68,7 +68,7 @@ system-library search path or an unpinned download channel.
 
 ## Selected release artifacts
 
-The immutable source selection for the 0.1.0 managed bundle is recorded in
+The immutable source selection for the managed bundle is recorded in
 `SOURCES.json`. The selected CUDA family is 13. Linux x86_64 uses cuBLAS
 13.8.0.4, cuDNN 9.26.0.51 (CUDA 13), and NCCL 2.31.2. Windows x86_64 uses
 cuBLAS 13.8.0.4 and cuDNN 9.26.0.51 (CUDA 13). Every source artifact is pinned
@@ -79,8 +79,9 @@ the source SHA256 before extracting libraries into `nvidia/lib`, preserve the
 vendor license files, then generate `BUNDLE.json` and `SHA256SUMS` for the
 exact files that will be installed.
 
-The 0.1.0 package manifest declares the immutable Linux x86_64 and Windows
-x86_64 GitHub release assets. Quidra Core 0.1.0 within the declared compatibility range downloads the matching asset
+The package manifest declares the immutable Linux x86_64 and Windows
+x86_64 GitHub release assets. A Quidra Core within the declared compatibility
+range downloads the matching asset
 during `quidra install dnn`, validates the archive structure before extraction,
 and atomically publishes the source package together with its managed NVIDIA
 runtime. macOS installs no NVIDIA asset and continues to use the Metal backend.

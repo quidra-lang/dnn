@@ -1,6 +1,7 @@
-# dnn
+# Quidra DNN
 
-`dnn` is Quidra's first-party deep-neural-network package. It owns DNN-specific
+Quidra DNN is Quidra's first-party deep-neural-network package, imported as
+`dnn`. It owns DNN-specific
 semantics and policy: layers, convolution/linear behavior, accelerator-library
 selection, execution mode, activations, losses, and optimizers. The standard
 `neural` namespace is intentionally the smaller autodiff/parameter foundation.
@@ -14,10 +15,12 @@ a genuinely generic autodiff primitive is required.
 
 ## Install
 
-DNN v0.1.0 requires Quidra `>=0.1.0 <0.2.0` and can be installed with:
+The package version and the Quidra range it requires are declared in
+[`project.toml`](project.toml); [`quidra.package`](quidra.package) is generated
+from it. Install a published release from a clone of its immutable tag:
 
 ```sh
-git clone --depth 1 --branch v0.1.0 https://github.com/quidra-lang/dnn.git
+git clone --depth 1 --branch <release-tag> https://github.com/quidra-lang/dnn.git
 cd dnn
 quidra install . --name dnn
 ```
@@ -26,7 +29,7 @@ Quidra versions that provide the release-aware short package CLI can install the
 same immutable release directly:
 
 ```sh
-quidra install dnn@0.1.0
+quidra install dnn@<release-version>
 ```
 
 Then import it normally:
@@ -205,8 +208,9 @@ cuDNN algorithms. If an accelerator operation is unavailable, the same operation
 falls back to Quidra's native GPU implementation, never to CPU. NCCL backs
 `all_reduce_sum(&values)` for explicit same-process multi-GPU tensor reduction.
 
-DNN v0.1.0 requires the Core v0.1.0 tag; the release workflow checks that
-baseline explicitly before building or tagging DNN.
+The release workflow derives the required Core baseline tag from the lower bound
+of `requires.quidra` and checks that the tag exists before building or tagging
+DNN.
 During development, CI additionally builds the current Quidra `develop` branch
 and checks GPU placement, inference, autograd, and optimizer contracts without
 changing `requires.quidra` to an unreleased branch. On a machine with a real

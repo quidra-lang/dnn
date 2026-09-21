@@ -15,7 +15,7 @@ Do not use `main` for unreleased development. Do not delete and recreate
 
 A release is valid only when these agree:
 
-- `quidra.package` version `X.Y.Z`;
+- `project.toml` version `X.Y.Z`, and the `quidra.package` generated from it;
 - immutable tag `vX.Y.Z`;
 - the exact `main` commit carrying that manifest;
 - the declared `requires.quidra` and package dependency ranges;
@@ -31,8 +31,9 @@ procedure, execute the complete sequence:
 1. Fetch the latest remote `develop` and `main` HEADs. Never work from a remembered SHA.
 2. Confirm that all intended work is in `develop`.
 3. Choose the Semantic Versioning release number from the actual change.
-4. Update `quidra.package`: set the exact package version, the tested
-   `requires.quidra` range, and any `requires.<package>` ranges.
+4. Update `project.toml`: set the exact package version, the tested
+   `requires.quidra` range, and any `requires.<package>` ranges. Then run
+   `python3 scripts/sync_metadata.py` to regenerate `quidra.package`.
 5. Ensure CI tests against an immutable released Quidra tag, never a Quidra
    development branch.
 6. Run/verify all tests and examples on `develop`. Fix failures there.
@@ -41,7 +42,8 @@ procedure, execute the complete sequence:
    the GitHub Release. Never tag `develop`.
 9. Verify the tag, GitHub Release, and `quidra.package` version all match.
 10. Return to `develop`, bring back any release-only change if needed, advance
-    `quidra.package` to the next intended development version, and push it.
+    `project.toml` to the next intended development version, run
+    `python3 scripts/sync_metadata.py`, and push it.
 11. Continue ordinary work only on `develop`.
 
 Never force-move, delete/recreate, or reuse a published release tag.
@@ -58,5 +60,5 @@ OS/architecture must resolve to the same component set. Do not use a mutable
 ## Core-first ordering
 
 If dnn needs a newer Quidra core, release Quidra core first. Only after that
-immutable core tag exists should dnn update `requires.quidra`, test against
-that tag, and publish its own release.
+immutable core tag exists should dnn update `requires.quidra` in `project.toml`,
+test against that tag, and publish its own release.

@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Check generated metadata matches project.toml
+        run: python3 scripts/sync_metadata.py --check
       - name: Validate selected NVIDIA source artifacts
         run: python3 tests/validate_nvidia_sources.py
       - name: Validate bundle metadata and checksums

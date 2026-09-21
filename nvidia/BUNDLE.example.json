@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "dnn_version": "0.1.0",
+  "dnn_version": "0.2.0",
   "platform": "linux",
   "architecture": "x86_64",
   "cuda_compatibility": "replace-with-exact-supported-CUDA-range",

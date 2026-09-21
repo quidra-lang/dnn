@@ -2,3 +2,4 @@ quidra.lock
 *.quistate
 .DS_Store
 quidra/
+__pycache__/
