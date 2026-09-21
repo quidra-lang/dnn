@@ -22,15 +22,19 @@ from it. Install a published release from a clone of its immutable tag:
 ```sh
 git clone --depth 1 --branch <release-tag> https://github.com/quidra-lang/dnn.git
 cd dnn
-quidra install . --name dnn
+quidra install .
 ```
 
 Quidra versions that provide the release-aware short package CLI can install the
 same immutable release directly:
 
 ```sh
-quidra install dnn@<release-version>
+quidra install quidra-dnn@<release-version>
 ```
+
+The package-manager identity is `quidra-dnn`; the Quidra source import
+identifier remains `dnn`. This distinction keeps installation names globally
+recognizable without making source imports longer.
 
 Then import it normally:
 
