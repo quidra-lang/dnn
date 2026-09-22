@@ -10,67 +10,67 @@ trap 'rm -rf "$TMP"' EXIT
 cat > "$TMP/contracts.qui" <<'QUI'
 import dnn
 
-dnn.fast()
-dnn.deterministic()
-dnn.fast()
+dnn.mode.fast()
+dnn.mode.deterministic()
+dnn.mode.fast()
 
 bool linear_rejected = false
-dnn.LinearLayer | error bad_linear = dnn.Linear(features_in = 2, features_out = 0)
+dnn.Linear | error bad_linear = dnn.Linear(features_in = 2, features_out = 0)
 match bad_linear
-    dnn.LinearLayer
+    dnn.Linear
         linear_rejected = false
     error
         linear_rejected = true
 print(linear_rejected)
 
 bool convolution_rejected = false
-dnn.Conv2DLayer | error bad_convolution = dnn.Conv2D(
+dnn.Conv2D | error bad_convolution = dnn.Conv2D(
     channels_in = 1,
     channels_out = 1,
     kernel = 3,
     stride = 0
 )
 match bad_convolution
-    dnn.Conv2DLayer
+    dnn.Conv2D
         convolution_rejected = false
     error
         convolution_rejected = true
 print(convolution_rejected)
 
 bool normalization_rejected = false
-dnn.BatchNormLayer | error bad_normalization = dnn.BatchNorm(
+dnn.BatchNorm | error bad_normalization = dnn.BatchNorm(
     features = 2,
     momentum = 1.5
 )
 match bad_normalization
-    dnn.BatchNormLayer
+    dnn.BatchNorm
         normalization_rejected = false
     error
         normalization_rejected = true
 print(normalization_rejected)
 
 bool dropout_rejected = false
-dnn.DropoutLayer | error bad_dropout = dnn.Dropout(rate = 1.0)
+dnn.Dropout | error bad_dropout = dnn.Dropout(rate = 1.0)
 match bad_dropout
-    dnn.DropoutLayer
+    dnn.Dropout
         dropout_rejected = false
     error
         dropout_rejected = true
 print(dropout_rejected)
 
 bool sgd_rejected = false
-dnn.SGDOptimizer | error bad_sgd = dnn.SGD(rate = 0.0)
+dnn.SGD | error bad_sgd = dnn.SGD(rate = 0.0)
 match bad_sgd
-    dnn.SGDOptimizer
+    dnn.SGD
         sgd_rejected = false
     error
         sgd_rejected = true
 print(sgd_rejected)
 
 bool adam_rejected = false
-dnn.AdamOptimizer | error bad_adam = dnn.Adam(beta1 = 1.0)
+dnn.Adam | error bad_adam = dnn.Adam(beta1 = 1.0)
 match bad_adam
-    dnn.AdamOptimizer
+    dnn.Adam
         adam_rejected = false
     error
         adam_rejected = true
@@ -81,64 +81,64 @@ float nan_value = zero / zero
 float infinity = 1.0 / zero
 
 bool linear_overflow_rejected = false
-dnn.LinearLayer | error huge_linear = dnn.Linear(
+dnn.Linear | error huge_linear = dnn.Linear(
     features_in = 3037000500,
     features_out = 3037000500
 )
 match huge_linear
-    dnn.LinearLayer
+    dnn.Linear
         linear_overflow_rejected = false
     error
         linear_overflow_rejected = true
 print(linear_overflow_rejected)
 
 bool convolution_overflow_rejected = false
-dnn.Conv2DLayer | error huge_convolution = dnn.Conv2D(
+dnn.Conv2D | error huge_convolution = dnn.Conv2D(
     channels_in = 1,
     channels_out = 1,
     kernel = 3037000500
 )
 match huge_convolution
-    dnn.Conv2DLayer
+    dnn.Conv2D
         convolution_overflow_rejected = false
     error
         convolution_overflow_rejected = true
 print(convolution_overflow_rejected)
 
 bool dropout_nan_rejected = false
-dnn.DropoutLayer | error nan_dropout = dnn.Dropout(rate = nan_value)
+dnn.Dropout | error nan_dropout = dnn.Dropout(rate = nan_value)
 match nan_dropout
-    dnn.DropoutLayer
+    dnn.Dropout
         dropout_nan_rejected = false
     error
         dropout_nan_rejected = true
 print(dropout_nan_rejected)
 
 bool sgd_infinity_rejected = false
-dnn.SGDOptimizer | error infinite_sgd = dnn.SGD(rate = infinity)
+dnn.SGD | error infinite_sgd = dnn.SGD(rate = infinity)
 match infinite_sgd
-    dnn.SGDOptimizer
+    dnn.SGD
         sgd_infinity_rejected = false
     error
         sgd_infinity_rejected = true
 print(sgd_infinity_rejected)
 
 bool adam_nan_rejected = false
-dnn.AdamOptimizer | error nan_adam = dnn.Adam(beta1 = nan_value)
+dnn.Adam | error nan_adam = dnn.Adam(beta1 = nan_value)
 match nan_adam
-    dnn.AdamOptimizer
+    dnn.Adam
         adam_nan_rejected = false
     error
         adam_nan_rejected = true
 print(adam_nan_rejected)
 
 bool batchnorm_infinity_rejected = false
-dnn.BatchNormLayer | error infinite_batchnorm = dnn.BatchNorm(
+dnn.BatchNorm | error infinite_batchnorm = dnn.BatchNorm(
     features = 2,
     epsilon = infinity
 )
 match infinite_batchnorm
-    dnn.BatchNormLayer
+    dnn.BatchNorm
         batchnorm_infinity_rejected = false
     error
         batchnorm_infinity_rejected = true
@@ -191,7 +191,7 @@ grep -Eq 'UNKNOWN_MODULE_MEMBER|UNKNOWN_NAME' "$TMP/private-bridge.out"
 
 cat > "$TMP/removed-mode-wrapper.qui" <<'QUI'
 import dnn
-dnn.mode(dnn.fast)
+dnn.mode(dnn.mode.fast)
 QUI
 set +e
 QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" check "$TMP/removed-mode-wrapper.qui" --json \

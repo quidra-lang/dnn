@@ -51,14 +51,10 @@ Every public top-level function has the following exact signature:
 
 | Function | Signature |
 | --- | --- |
-| `fast` | `fast() -> void` |
-| `deterministic` | `deterministic() -> void` |
+| `mode.fast` | `mode.fast() -> void` |
+| `mode.deterministic` | `mode.deterministic() -> void` |
 | `all_reduce_sum` | `all_reduce_sum<T: floating>(tensor<T>[] &values) -> void` |
 | `uniform_weights` | `uniform_weights(int count, float bound, int seed) -> tensor<float32> \| error` |
-| `Linear` | `Linear(int features_in, int features_out, int seed = 1) -> LinearLayer \| error` |
-| `Conv2D` | `Conv2D(int channels_in, int channels_out, int kernel, int stride = 1, int padding = 0, int seed = 1) -> Conv2DLayer \| error` |
-| `BatchNorm` | `BatchNorm(int features, float momentum = 0.1, float epsilon = 0.00001) -> BatchNormLayer \| error` |
-| `Dropout` | `Dropout(float rate, uint64 seed = uint64(0)) -> DropoutLayer \| error` |
 | `relu` | `relu<X>(X value) -> X` |
 | `tanh` | `tanh<X>(X value) -> X` |
 | `sigmoid` | `sigmoid<X>(X value) -> X` |
@@ -68,24 +64,41 @@ Every public top-level function has the following exact signature:
 | `binary_cross_entropy` | `binary_cross_entropy(neural<float32> prediction, tensor<float32> target) -> neural<float32>` |
 | `binary_cross_entropy_with_logits` | `binary_cross_entropy_with_logits(neural<float32> logits, tensor<float32> target) -> neural<float32>` |
 | `cross_entropy` | `cross_entropy(neural<float32> logits, tensor<float32> target) -> neural<float32>` |
-| `SGD` | `SGD(float rate = 0.01) -> SGDOptimizer \| error` |
-| `Adam` | `Adam(float rate = 0.001, float beta1 = 0.9, float beta2 = 0.999, float epsilon = 0.00000001) -> AdamOptimizer \| error` |
+
+Layers and optimizers are classes. Each declares one constructor that can fail,
+so `dnn.Linear(2, 1)` fails fast on an invalid configuration, `try dnn.Linear(2, 1)`
+propagates the error, and `dnn.Linear | error layer = dnn.Linear(2, 1)` keeps it
+for a `match`. Arguments may be positional or named.
+
+| Class | Constructor |
+| --- | --- |
+| `Linear` | `Linear(int features_in, int features_out, int seed = 1)` |
+| `Conv2D` | `Conv2D(int channels_in, int channels_out, int kernel, int stride = 1, int padding = 0, int seed = 1)` |
+| `BatchNorm` | `BatchNorm(int features, float momentum = 0.1, float epsilon = 0.00001)` |
+| `Dropout` | `Dropout(float rate, uint64 seed = uint64(0))` |
+| `SGD` | `SGD(float rate = 0.01)` |
+| `Adam` | `Adam(float rate = 0.001, float beta1 = 0.9, float beta2 = 0.999, float epsilon = 0.00000001)` |
 
 The public methods are:
 
 | Class | Signature |
 | --- | --- |
-| `LinearLayer` | `forward<X>(X value) -> X` |
-| `Conv2DLayer` | `forward<X>(X value) -> X` |
-| `BatchNormLayer` | `forward(neural<float32> value) -> neural<float32>` |
-| `BatchNormLayer` | `infer(tensor<float32> value) -> tensor<float32>` |
-| `DropoutLayer` | `forward(neural<float32> value) -> neural<float32>` |
-| `DropoutLayer` | `infer(tensor<float32> value) -> tensor<float32>` |
-| `SGDOptimizer` | `step<M>(M &model, neural.Gradients gradients) -> void` |
-| `AdamOptimizer` | `step<M>(M &model, neural.Gradients gradients) -> void` |
+| `Linear` | `forward<X>(X value) -> X` |
+| `Conv2D` | `forward<X>(X value) -> X` |
+| `BatchNorm` | `forward(neural<float32> value) -> neural<float32>` |
+| `BatchNorm` | `infer(tensor<float32> value) -> tensor<float32>` |
+| `Dropout` | `forward(neural<float32> value) -> neural<float32>` |
+| `Dropout` | `infer(tensor<float32> value) -> tensor<float32>` |
+| `SGD` | `step<M>(M &model, neural.Gradients gradients) -> void` |
+| `Adam` | `step<M>(M &model, neural.Gradients gradients) -> void` |
 
-Each layer factory returns a class value or `error`. Parameters and state remain
-regular fields, so after validation a model is still an ordinary Quidra class.
+Parameters and state remain regular fields (`Linear.weight`, `Linear.bias`,
+`Conv2D.weight`, `Conv2D.bias`, `Conv2D.step`, `Conv2D.border`, `BatchNorm.scale`,
+`BatchNorm.bias`, `BatchNorm.running_mean`, `BatchNorm.running_variance`,
+`Dropout.drop_rate`, `Dropout.rng`), so after validation a model is still an
+ordinary Quidra class, and a layer can also be declared without a constructor
+call, `dnn.Linear layer`, and given tensors you supply by assigning `weight` and
+`bias`.
 
 Validation is explicit: feature/channel/kernel sizes and strides must be
 positive, convolution padding must be nonnegative, dimension products are
@@ -98,14 +111,14 @@ BatchNorm momentum and Adam betas must be in `[0, 1)`, Dropout rate must be in
 - Losses: `mse`, `cross_entropy`, `binary_cross_entropy`, `binary_cross_entropy_with_logits`
 - Multi-GPU: `all_reduce_sum(&values)` performs an in-place sum over same-shaped `float32`/`float` tensors on distinct NVIDIA GPUs
 
-With a `neural<T>` input, `forward` extends the differentiable graph. `BatchNormLayer.forward`
+With a `neural<T>` input, `forward` extends the differentiable graph. `BatchNorm.forward`
 updates the running statistics and `infer` is the read-only path over plain
-tensors; `DropoutLayer.infer` returns its input unchanged. `LinearLayer.forward`
-and `Conv2DLayer.forward` are generic over the input representation and also
+tensors; `Dropout.infer` returns its input unchanged. `Linear.forward`
+and `Conv2D.forward` are generic over the input representation and also
 accept a plain `tensor<float32>`, returning a plain tensor when no gradient is needed.
 
 Training uses `neural.grad`; optimizer `step` methods mutate an explicitly
-writable model. `AdamOptimizer` owns its iteration counter and moment state, so
+writable model. `Adam` owns its iteration counter and moment state, so
 saving the optimizer alongside the model preserves the state required to resume
 training.
 
@@ -121,7 +134,7 @@ graph. `cross_entropy` is intended for class-distribution targets such as a one-
 broadcasting rules still apply to the target in the underlying arithmetic. `gelu`
 uses the tanh approximation.
 
-The layer factories use `float32`. Convolution expects NCHW inputs and OIHW
+The layer constructors use `float32`. Convolution expects NCHW inputs and OIHW
 weights. Normalization treats axis 1 as the feature/channel axis.
 
 `Linear` and `Conv2D` generate each weight from a `random.Generator.float()` sample `u` as
@@ -137,8 +150,8 @@ random source.
 and returns `tensor<float32> | error`: each valid output element is computed as
 `float32((2*u - 1) * bound)` from `u = Generator.float()`. Before the final
 `float32` rounding, the sampled value lies in `[-bound, +bound)`; `bound = 0`
-produces zeros. Invalid count/bound configuration returns `error`. Reshape it to build a layer with your own initialization, or construct
-`LinearLayer` and `Conv2DLayer` from tensors you supply.
+produces zeros. Invalid count/bound configuration returns `error`. Reshape it to build a layer with your own initialization, or declare a
+`Linear` or `Conv2D` without a constructor call and assign the tensors you supply.
 
 ## Execution mode
 
@@ -151,19 +164,20 @@ For reproducibility-sensitive runs, switch the process-wide DNN execution mode
 once near program startup:
 
 ```quidra
-dnn.deterministic()
+dnn.mode.deterministic()
 ```
 
 To switch back explicitly:
 
 ```quidra
-dnn.fast()
+dnn.mode.fast()
 ```
 
-The execution policy is deliberately exposed as these two direct calls rather
-than accepting an arbitrary function value. `deterministic()` restricts
-accelerated backends to deterministic algorithms; `fast()` permits the backend
-to choose the fastest valid algorithm. Explicit Quidra RNG state, such as a Dropout seed, remains
+The execution policy is deliberately exposed as these two direct calls in the
+`dnn.mode` namespace rather than accepting an arbitrary function value.
+`mode.deterministic()` restricts accelerated backends to deterministic
+algorithms; `mode.fast()` permits the backend to choose the fastest valid
+algorithm. Explicit Quidra RNG state, such as a Dropout seed, remains
 separate from algorithm determinism and is never replaced by a hidden GPU RNG.
 
 ## Device placement

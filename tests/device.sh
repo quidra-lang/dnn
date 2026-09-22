@@ -14,7 +14,7 @@ cat > "$TMP/device-check.qui" <<'QUI'
 import dnn
 
 int | error compile_device_surface()
-    dnn.LinearLayer layer = try dnn.Linear(features_in = 2, features_out = 1)
+    dnn.Linear layer = try dnn.Linear(features_in = 2, features_out = 1)
     tensor<float32> direct = tensor.zeros<float32>([1, 2], gpu = 0)
     tensor<float32> transferred = tensor.ones<float32>([1, 2]).gpu(0)
     tensor<float32> roundtrip = transferred.cpu()
@@ -94,7 +94,7 @@ cat > "$TMP/parameter-device-mismatch.qui" <<'QUI'
 import dnn
 
 int | error run()
-    dnn.LinearLayer layer = try dnn.Linear(features_in = 2, features_out = 1)
+    dnn.Linear layer = try dnn.Linear(features_in = 2, features_out = 1)
     tensor<float32> samples_gpu = tensor.ones<float32>([1, 2], gpu = 0)
     tensor<float32> output = layer.forward(samples_gpu)
     print(output.shape()[1])
@@ -112,14 +112,9 @@ expect_device_failure "$TMP/parameter-device-mismatch.qui" "input and Parameter/
 cat > "$TMP/same-device-compute.qui" <<'QUI'
 import dnn
 
-dnn.LinearLayer layer = dnn.LinearLayer(
-    weight = neural.Parameter<float32>(
-        value = tensor.ones<float32>([1, 2], gpu = 0)
-    ),
-    bias = neural.Parameter<float32>(
-        value = tensor.zeros<float32>([1], gpu = 0)
-    )
-)
+dnn.Linear layer
+layer.weight = neural.Parameter<float32>( value = tensor.ones<float32>([1, 2], gpu = 0) )
+layer.bias = neural.Parameter<float32>( value = tensor.zeros<float32>([1], gpu = 0) )
 tensor<float32> samples = tensor.ones<float32>([1, 2], gpu = 0)
 tensor<float32> output = layer.forward(samples)
 print(output.shape()[0])
@@ -136,22 +131,13 @@ print(activated[0, 1].item())
 float32 probability_total = probabilities[0, 0].item() + probabilities[0, 1].item()
 print(probability_total > float32(0.9999) and probability_total < float32(1.0001))
 
-dnn.BatchNormLayer normalization = dnn.BatchNormLayer(
-    scale = neural.Parameter<float32>(
-        value = tensor.ones<float32>([2], gpu = 0)
-    ),
-    bias = neural.Parameter<float32>(
-        value = tensor.zeros<float32>([2], gpu = 0)
-    ),
-    running_mean = neural.State<tensor<float32>>(
-        value = tensor.zeros<float32>([2], gpu = 0)
-    ),
-    running_variance = neural.State<tensor<float32>>(
-        value = tensor.ones<float32>([2], gpu = 0)
-    ),
-    momentum = 0.1,
-    epsilon = 0.00001
-)
+dnn.BatchNorm normalization
+normalization.scale = neural.Parameter<float32>( value = tensor.ones<float32>([2], gpu = 0) )
+normalization.bias = neural.Parameter<float32>( value = tensor.zeros<float32>([2], gpu = 0) )
+normalization.running_mean = neural.State<tensor<float32>>( value = tensor.zeros<float32>([2], gpu = 0) )
+normalization.running_variance = neural.State<tensor<float32>>( value = tensor.ones<float32>([2], gpu = 0) )
+normalization.running_momentum = 0.1
+normalization.variance_epsilon = 0.00001
 tensor<float32> normalized = normalization.infer(
     tensor.ones<float32>([1, 2], gpu = 0)
 )
@@ -172,14 +158,11 @@ import dnn
 
 tensor<float32> kernel = tensor.zeros<float32>([1, 1, 1, 1], gpu = 0)
 kernel[0, 0, 0, 0] = float32(2)
-dnn.Conv2DLayer convolution = dnn.Conv2DLayer(
-    weight = neural.Parameter<float32>(value = kernel),
-    bias = neural.Parameter<float32>(
-        value = tensor.zeros<float32>([1], gpu = 0)
-    ),
-    stride = 1,
-    padding = 0
-)
+dnn.Conv2D convolution
+convolution.weight = neural.Parameter<float32>(value = kernel)
+convolution.bias = neural.Parameter<float32>( value = tensor.zeros<float32>([1], gpu = 0) )
+convolution.step = 1
+convolution.border = 0
 tensor<float32> pixels = tensor.ones<float32>([1, 1, 2, 2], gpu = 0)
 tensor<float32> filtered = convolution.forward(pixels)
 print(filtered.shape()[2])
@@ -198,18 +181,14 @@ cat > "$TMP/tracked-gpu.qui" <<'QUI'
 import dnn
 
 class Model
-    dnn.LinearLayer dense
+    dnn.Linear dense
 
 int | error run()
-    dnn.LinearLayer layer = dnn.LinearLayer(
-        weight = neural.Parameter<float32>(
-            value = tensor.ones<float32>([1, 2], gpu = 0)
-        ),
-        bias = neural.Parameter<float32>(
-            value = tensor.zeros<float32>([1], gpu = 0)
-        )
-    )
-    Model model = Model(dense = layer)
+    dnn.Linear layer
+    layer.weight = neural.Parameter<float32>( value = tensor.ones<float32>([1, 2], gpu = 0) )
+    layer.bias = neural.Parameter<float32>( value = tensor.zeros<float32>([1], gpu = 0) )
+    Model model
+    model.dense = layer
     tensor<float32> samples = tensor.ones<float32>([1, 2], gpu = 0)
     tensor<float32> target = tensor.zeros<float32>([1, 1], gpu = 0)
 
@@ -221,7 +200,7 @@ int | error run()
 
     neural.Gradients gradients = neural.grad(loss)
     float32 before = model.dense.weight.raw()[0, 0].item()
-    dnn.SGDOptimizer optimizer = try dnn.SGD(rate = 0.1)
+    dnn.SGD optimizer = try dnn.SGD(rate = 0.1)
     optimizer.step(&model, gradients)
     float32 after = model.dense.weight.raw()[0, 0].item()
     print(after < before)
@@ -250,83 +229,57 @@ cat > "$TMP/training-gpu.qui" <<'QUI'
 import dnn
 
 class ConvModel
-    dnn.Conv2DLayer convolution
+    dnn.Conv2D convolution
 
 class LinearModel
-    dnn.LinearLayer dense
+    dnn.Linear dense
 
 class ParameterModel
     neural.Parameter<float32> value
 
 int | error run()
     tensor<float32> kernel = tensor.ones<float32>([1, 1, 1, 1], gpu = 0)
-    dnn.Conv2DLayer convolution = dnn.Conv2DLayer(
-        weight = neural.Parameter<float32>(value = kernel),
-        bias = neural.Parameter<float32>(
-            value = tensor.zeros<float32>([1], gpu = 0)
-        ),
-        stride = 1,
-        padding = 0
-    )
-    ConvModel conv_model = ConvModel(convolution = convolution)
+    dnn.Conv2D convolution
+    convolution.weight = neural.Parameter<float32>(value = kernel)
+    convolution.bias = neural.Parameter<float32>( value = tensor.zeros<float32>([1], gpu = 0) )
+    convolution.step = 1
+    convolution.border = 0
+    ConvModel conv_model
+    conv_model.convolution = convolution
     tensor<float32> pixels = tensor.ones<float32>([1, 1, 2, 2], gpu = 0)
     tensor<float32> zero_image = tensor.zeros<float32>([1, 1, 2, 2], gpu = 0)
     neural<float32> conv_prediction = conv_model.convolution.forward(neural.track(pixels))
     neural.Gradients conv_gradients = neural.grad(dnn.mse(conv_prediction, zero_image))
     float32 conv_before = conv_model.convolution.weight.raw()[0, 0, 0, 0].item()
-    dnn.SGDOptimizer sgd = dnn.SGDOptimizer(rate = 0.1)
+    dnn.SGD sgd = dnn.SGD(rate = 0.1)
     sgd.step(&conv_model, conv_gradients)
     print(conv_model.convolution.weight.raw()[0, 0, 0, 0].item() < conv_before)
 
-    dnn.BatchNormLayer normalization = dnn.BatchNormLayer(
-        scale = neural.Parameter<float32>(
-            value = tensor.ones<float32>([2], gpu = 0)
-        ),
-        bias = neural.Parameter<float32>(
-            value = tensor.zeros<float32>([2], gpu = 0)
-        ),
-        running_mean = neural.State<tensor<float32>>(
-            value = tensor.zeros<float32>([2], gpu = 0)
-        ),
-        running_variance = neural.State<tensor<float32>>(
-            value = tensor.ones<float32>([2], gpu = 0)
-        ),
-        momentum = 0.1,
-        epsilon = 0.00001
-    )
+    dnn.BatchNorm normalization
+    normalization.scale = neural.Parameter<float32>( value = tensor.ones<float32>([2], gpu = 0) )
+    normalization.bias = neural.Parameter<float32>( value = tensor.zeros<float32>([2], gpu = 0) )
+    normalization.running_mean = neural.State<tensor<float32>>( value = tensor.zeros<float32>([2], gpu = 0) )
+    normalization.running_variance = neural.State<tensor<float32>>( value = tensor.ones<float32>([2], gpu = 0) )
+    normalization.running_momentum = 0.1
+    normalization.variance_epsilon = 0.00001
     tensor<float32> norm_values = tensor.ones<float32>([2, 2], gpu = 0)
     neural<float32> normalized = normalization.forward(neural.track(norm_values))
     neural.Gradients norm_gradients = neural.grad(neural.mean(normalized * normalized))
     print(normalized.untrack().shape()[1])
     print(normalization.infer(norm_values).shape()[1] == 2)
 
-    dnn.DropoutLayer dropout = dnn.DropoutLayer(
-        rate = 0.5,
-        rng = neural.State<uint64>(value = uint64(17))
-    )
+    dnn.Dropout dropout = dnn.Dropout(rate = 0.5, seed = uint64(17))
     neural<float32> dropped = dropout.forward(neural.track(norm_values))
     neural.Gradients dropout_gradients = neural.grad(neural.mean(dropped * dropped))
     print(dropped.untrack().shape()[0])
     print(dropout.infer(norm_values)[0, 0].item() == float32(1))
 
-    ParameterModel cpu_dropout_model = ParameterModel(
-        value = neural.Parameter<float32>(
-            value = tensor.ones<float32>([2, 2])
-        )
-    )
-    ParameterModel gpu_dropout_model = ParameterModel(
-        value = neural.Parameter<float32>(
-            value = tensor.ones<float32>([2, 2], gpu = 0)
-        )
-    )
-    dnn.DropoutLayer cpu_dropout_backward = dnn.DropoutLayer(
-        rate = 0.5,
-        rng = neural.State<uint64>(value = uint64(29))
-    )
-    dnn.DropoutLayer gpu_dropout_backward = dnn.DropoutLayer(
-        rate = 0.5,
-        rng = neural.State<uint64>(value = uint64(29))
-    )
+    ParameterModel cpu_dropout_model
+    cpu_dropout_model.value = neural.Parameter<float32>( value = tensor.ones<float32>([2, 2]) )
+    ParameterModel gpu_dropout_model
+    gpu_dropout_model.value = neural.Parameter<float32>( value = tensor.ones<float32>([2, 2], gpu = 0) )
+    dnn.Dropout cpu_dropout_backward = dnn.Dropout(rate = 0.5, seed = uint64(29))
+    dnn.Dropout gpu_dropout_backward = dnn.Dropout(rate = 0.5, seed = uint64(29))
     neural<float32> cpu_dropout_output = cpu_dropout_backward.forward(
         cpu_dropout_model.value.track()
     )
@@ -335,8 +288,8 @@ int | error run()
     )
     neural.Gradients cpu_dropout_gradients = neural.grad(neural.mean(cpu_dropout_output))
     neural.Gradients gpu_dropout_gradients = neural.grad(neural.mean(gpu_dropout_output))
-    dnn.SGDOptimizer cpu_dropout_sgd = dnn.SGDOptimizer(rate = 0.1)
-    dnn.SGDOptimizer gpu_dropout_sgd = dnn.SGDOptimizer(rate = 0.1)
+    dnn.SGD cpu_dropout_sgd = dnn.SGD(rate = 0.1)
+    dnn.SGD gpu_dropout_sgd = dnn.SGD(rate = 0.1)
     cpu_dropout_sgd.step(&cpu_dropout_model, cpu_dropout_gradients)
     gpu_dropout_sgd.step(&gpu_dropout_model, gpu_dropout_gradients)
     tensor<float32> gpu_dropout_weight = gpu_dropout_model.value.raw().cpu()
@@ -347,16 +300,13 @@ int | error run()
         and cpu_dropout_model.value.raw()[1, 1].item() == gpu_dropout_weight[1, 1].item()
     )
 
-    ParameterModel accumulation_model = ParameterModel(
-        value = neural.Parameter<float32>(
-            value = tensor.ones<float32>([1], gpu = 0)
-        )
-    )
+    ParameterModel accumulation_model
+    accumulation_model.value = neural.Parameter<float32>( value = tensor.ones<float32>([1], gpu = 0) )
     neural<float32> accumulation_value = accumulation_model.value.track()
     neural.Gradients accumulation_gradients = neural.grad(
         neural.mean(accumulation_value + accumulation_value)
     )
-    dnn.SGDOptimizer accumulation_sgd = dnn.SGDOptimizer(rate = 0.1)
+    dnn.SGD accumulation_sgd = dnn.SGD(rate = 0.1)
     accumulation_sgd.step(&accumulation_model, accumulation_gradients)
     float32 accumulation_after = accumulation_model.value.raw()[0].item()
     print(
@@ -364,22 +314,16 @@ int | error run()
         and accumulation_after < float32(0.8001)
     )
 
-    dnn.LinearLayer dense = dnn.LinearLayer(
-        weight = neural.Parameter<float32>(
-            value = tensor.ones<float32>([1, 1], gpu = 0)
-        ),
-        bias = neural.Parameter<float32>(
-            value = tensor.zeros<float32>([1], gpu = 0)
-        )
-    )
-    LinearModel model = LinearModel(dense = dense)
-    dnn.AdamOptimizer adam = dnn.AdamOptimizer(
+    dnn.Linear dense
+    dense.weight = neural.Parameter<float32>( value = tensor.ones<float32>([1, 1], gpu = 0) )
+    dense.bias = neural.Parameter<float32>( value = tensor.zeros<float32>([1], gpu = 0) )
+    LinearModel model
+    model.dense = dense
+    dnn.Adam adam = dnn.Adam(
         rate = 0.1,
         beta1 = 0.9,
         beta2 = 0.999,
-        epsilon = 0.00000001,
-        iteration = neural.State<int>(value = 0),
-        moments = neural.State<bin>(value = bin.fill(0, 0))
+        epsilon = 0.00000001
     )
     tensor<float32> sample = tensor.ones<float32>([1, 1], gpu = 0)
     tensor<float32> target = tensor.zeros<float32>([1, 1], gpu = 0)

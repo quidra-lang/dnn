@@ -11,11 +11,12 @@ cat > "$TMP/use-dnn.qui" <<'QUI'
 import dnn
 
 class Model
-    dnn.LinearLayer dense
+    dnn.Linear dense
 
 int | error run()
-    dnn.LinearLayer dense = try dnn.Linear(features_in = 2, features_out = 1)
-    Model model = Model(dense = dense)
+    dnn.Linear dense = try dnn.Linear(features_in = 2, features_out = 1)
+    Model model
+    model.dense = dense
     tensor<float32> samples = tensor.ones<float32>([1, 2])
     tensor<float32> targets = tensor.zeros<float32>([1, 1])
     neural<float32> prediction = dnn.relu(
@@ -23,7 +24,7 @@ int | error run()
     )
     neural<float32> loss = dnn.mse(prediction, targets)
     neural.Gradients gradients = neural.grad(loss)
-    dnn.SGDOptimizer optimizer = try dnn.SGD(rate = 0.1)
+    dnn.SGD optimizer = try dnn.SGD(rate = 0.1)
     optimizer.step(&model, gradients)
 
     print(prediction.untrack().shape()[0])
@@ -61,7 +62,7 @@ cat > "$TMP/operations.qui" <<'QUI'
 import dnn
 
 int | error run()
-    dnn.Conv2DLayer convolution = try dnn.Conv2D(
+    dnn.Conv2D convolution = try dnn.Conv2D(
         channels_in = 1,
         channels_out = 2,
         kernel = 3,
@@ -112,7 +113,7 @@ cat > "$TMP/stateful-layers.qui" <<'QUI'
 import dnn
 
 int | error run()
-    dnn.BatchNormLayer normalization = try dnn.BatchNorm(features = 2)
+    dnn.BatchNorm normalization = try dnn.BatchNorm(features = 2)
     tensor<float32> values = tensor.ones<float32>([2, 2])
     neural<float32> trained = normalization.forward(neural.track(values))
     tensor<float32> inferred = normalization.infer(values)
@@ -120,7 +121,7 @@ int | error run()
     print(inferred.shape()[1])
     print(inferred[0, 0].item() < float32(1))
 
-    dnn.DropoutLayer masking = try dnn.Dropout(rate = 0.5, seed = uint64(17))
+    dnn.Dropout masking = try dnn.Dropout(rate = 0.5, seed = uint64(17))
     neural<float32> masked = masking.forward(neural.track(values))
     print(masked.untrack().shape()[0])
     print(masked.untrack().shape()[1] == 2)
@@ -146,12 +147,13 @@ cat > "$TMP/adam.qui" <<'QUI'
 import dnn
 
 class Model
-    dnn.LinearLayer dense
+    dnn.Linear dense
 
 int | error run()
-    dnn.LinearLayer dense = try dnn.Linear(features_in = 1, features_out = 1)
-    Model model = Model(dense = dense)
-    dnn.AdamOptimizer optimizer = try dnn.Adam(rate = 0.1)
+    dnn.Linear dense = try dnn.Linear(features_in = 1, features_out = 1)
+    Model model
+    model.dense = dense
+    dnn.Adam optimizer = try dnn.Adam(rate = 0.1)
     tensor<float32> samples = tensor.ones<float32>([1, 1])
     tensor<float32> targets = tensor.ones<float32>([1, 1])
     float32 before = model.dense.weight.raw()[0, 0].item()
@@ -181,7 +183,7 @@ cat > "$TMP/numeric-stability.qui" <<'QUI'
 import dnn
 
 class Model
-    dnn.LinearLayer dense
+    dnn.Linear dense
 
 int | error run()
     tensor<float32> extreme = tensor.zeros<float32>([1, 2])
@@ -207,8 +209,9 @@ int | error run()
     target[0, 0] = float32(1.0)
     print(dnn.cross_entropy(neural.track(logits), target).untrack().item())
 
-    dnn.LinearLayer dense = try dnn.Linear(features_in = 2, features_out = 2)
-    Model model = Model(dense = dense)
+    dnn.Linear dense = try dnn.Linear(features_in = 2, features_out = 2)
+    Model model
+    model.dense = dense
     tensor<float32> samples = tensor.ones<float32>([1, 2])
     tensor<float32> classes = tensor.zeros<float32>([1, 2])
     classes[0, 1] = float32(1)
@@ -216,7 +219,7 @@ int | error run()
     neural<float32> loss = dnn.cross_entropy(scores, classes)
     neural.Gradients gradients = neural.grad(loss)
     float32 before = model.dense.bias.raw()[1].item()
-    dnn.SGDOptimizer optimizer = try dnn.SGD(rate = 0.5)
+    dnn.SGD optimizer = try dnn.SGD(rate = 0.5)
     optimizer.step(&model, gradients)
     print(model.dense.bias.raw()[1].item() > before)
     return 0
@@ -240,7 +243,7 @@ cat > "$TMP/initialization.qui" <<'QUI'
 import dnn
 
 int | error run()
-    dnn.LinearLayer layer = try dnn.Linear(features_in = 3, features_out = 4)
+    dnn.Linear layer = try dnn.Linear(features_in = 3, features_out = 4)
     print(layer.weight.raw().shape()[0])
     print(layer.weight.raw().shape()[1])
 
@@ -262,12 +265,12 @@ int | error run()
                 outside += 1
     print(outside)
 
-    dnn.LinearLayer repeated = try dnn.Linear(features_in = 3, features_out = 4)
-    dnn.LinearLayer reseeded = try dnn.Linear(features_in = 3, features_out = 4, seed = 7)
+    dnn.Linear repeated = try dnn.Linear(features_in = 3, features_out = 4)
+    dnn.Linear reseeded = try dnn.Linear(features_in = 3, features_out = 4, seed = 7)
     print(repeated.weight.raw()[0, 0].item() == layer.weight.raw()[0, 0].item())
     print(reseeded.weight.raw()[0, 0].item() != layer.weight.raw()[0, 0].item())
 
-    dnn.Conv2DLayer convolution = try dnn.Conv2D(
+    dnn.Conv2D convolution = try dnn.Conv2D(
         channels_in = 2, channels_out = 3, kernel = 3
     )
     int same_filters = 0

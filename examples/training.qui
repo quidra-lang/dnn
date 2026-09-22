@@ -1,14 +1,16 @@
 import dnn
 
 class Model
-    dnn.LinearLayer hidden
-    dnn.LinearLayer output
+    dnn.Linear hidden
+    dnn.Linear output
 
 int | error train()
-    dnn.LinearLayer hidden = try dnn.Linear(features_in = 2, features_out = 4)
-    dnn.LinearLayer output = try dnn.Linear(features_in = 4, features_out = 1, seed = 2)
-    Model model = Model(hidden = hidden, output = output)
-    dnn.SGDOptimizer optimizer = try dnn.SGD(rate = 0.1)
+    dnn.Linear hidden = try dnn.Linear(features_in = 2, features_out = 4)
+    dnn.Linear output = try dnn.Linear(features_in = 4, features_out = 1, seed = 2)
+    Model model
+    model.hidden = hidden
+    model.output = output
+    dnn.SGD optimizer = try dnn.SGD(rate = 0.1)
 
     tensor<float32> samples = tensor.ones<float32>([1, 2])
     tensor<float32> targets = tensor.ones<float32>([1, 1])
