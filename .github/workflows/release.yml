@@ -16,6 +16,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check generated metadata matches project.toml
+        run: python3 scripts/sync_metadata.py --check
+
       - name: Validate managed NVIDIA source lock
         run: python3 tests/validate_nvidia_sources.py
 

@@ -8,12 +8,13 @@ Run it after editing project.toml:
 `--check` reports drift and exits non-zero instead of writing, which is what CI
 uses to prove nothing was hand-edited.
 
-quidra.package is written for the closed key set that Quidra Core's
-`src/package_manifest.cpp` accepts: `name`, `version`, `repository`,
-`asset.<platform>` and `requires.<dep>`. Anything else is a hard error on the
-ordinary compile path, including for already-released Core binaries, so the
-metadata that has no home there - the distribution name, the display name and
-the ABI requirement - stays in project.toml only.
+quidra.package uses only the compatibility-safe subset of the closed key set
+that Quidra Core's `src/package_manifest.cpp` accepts: `name`, `version`,
+`repository`, `asset.<platform>` and `requires.<dep>`. Core also accepts the
+optional descriptive keys `description`, `license`, and `homepage`; this
+package does not currently author them. Metadata with no legacy manifest
+representation - the distribution name, the display name and the ABI
+requirement - stays in project.toml only.
 """
 
 from __future__ import annotations

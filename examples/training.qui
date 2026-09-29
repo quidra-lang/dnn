@@ -1,45 +1,41 @@
 import dnn
 
 class Model
-    dnn.Linear hidden
-    dnn.Linear output
+    dnn.FC hidden
+    dnn.FC output
 
-int | error train()
-    dnn.Linear hidden = try dnn.Linear(features_in = 2, features_out = 4)
-    dnn.Linear output = try dnn.Linear(features_in = 4, features_out = 1, seed = 2)
+void train()
     Model model
-    model.hidden = hidden
-    model.output = output
-    dnn.SGD optimizer = try dnn.SGD(rate = 0.1)
+    model.hidden = dnn.FC(features_in = 2, features_out = 4)
+    model.output = dnn.FC(features_in = 4, features_out = 1, seed = 2)
+    dnn.SGD optimizer = dnn.SGD(rate = 0.1)
 
-    tensor<float32> samples = tensor.ones<float32>([1, 2])
-    tensor<float32> targets = tensor.ones<float32>([1, 1])
+    tensor<float32> samples = tensor.ones([1, 2])
+    tensor<float32> targets = tensor.ones([1, 1])
 
-    neural<float32> first = dnn.mse(
+    tensor<float32> first = dnn.mse(
         model.output.forward(
-            dnn.relu(model.hidden.forward(neural.track(samples)))
+            dnn.relu(model.hidden.forward(samples.track()))
         ),
         targets
     )
-    print(first.untrack().item())
+    print(first.item())
 
-    float32 latest = first.untrack().item()
+    float32 latest = first.item()
     for iteration in range(100)
-        neural<float32> activated = dnn.relu(
-            model.hidden.forward(neural.track(samples))
+        tensor<float32> activated = dnn.relu(
+            model.hidden.forward(samples.track())
         )
-        neural<float32> loss = dnn.mse(model.output.forward(activated), targets)
-        neural.Gradients gradients = neural.grad(loss)
-        optimizer.step(&model, gradients)
-        latest = loss.untrack().item()
+        tensor<float32> loss = dnn.mse(model.output.forward(activated), targets)
+
+        optimizer.zero_grad(&model)
+        loss.backward(&model)
+        optimizer.step(&model)
+
+        latest = loss.item()
 
     print(latest)
-    print(latest < first.untrack().item())
-    return 0
+    print(latest < first.item())
 
-auto result = train()
-match result
-    int
-        int ignored = result
-    error problem
-        print(problem)
+if main
+    train()

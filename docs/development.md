@@ -34,8 +34,9 @@ procedure, execute the complete sequence:
 4. Update `project.toml`: set the exact package version, the tested
    `requires.quidra` range, and any `requires.<package>` ranges. Then run
    `python3 scripts/sync_metadata.py` to regenerate `quidra.package`.
-5. Ensure CI tests against an immutable released Quidra tag, never a Quidra
-   development branch.
+5. Ensure the release workflow validates against the immutable released Quidra
+   baseline selected by `requires.quidra`. Development compatibility CI may
+   additionally test the current Quidra `develop` branch.
 6. Run/verify all tests and examples on `develop`. Fix failures there.
 7. Merge `develop` into `main` while preserving valid history from both branches.
 8. Create immutable tag `vX.Y.Z` on that exact tested `main` commit and create
