@@ -16,107 +16,80 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check generated metadata matches project.toml
-        run: python3 scripts/sync_metadata.py --check
-
-      - name: Validate managed NVIDIA source lock
-        run: python3 tests/validate_nvidia_sources.py
-
-      - name: Materialize managed NVIDIA bundles
-        run: |
-          python3 scripts/materialize_nvidia_bundle.py --platform linux-x86_64 --output "$RUNNER_TEMP/bundle-linux"
-          python3 scripts/materialize_nvidia_bundle.py --platform windows-x86_64 --output "$RUNNER_TEMP/bundle-windows"
-          python3 tests/validate_nvidia_bundle.py --require-populated "$RUNNER_TEMP/bundle-linux"
-          python3 tests/validate_nvidia_bundle.py --require-populated "$RUNNER_TEMP/bundle-windows"
-          tar -C "$RUNNER_TEMP/bundle-linux" -cJf "$RUNNER_TEMP/dnn-nvidia-linux-x86_64.tar.xz" nvidia
-          python3 - <<'PY'
-          import os, zipfile
-          from pathlib import Path
-          root = Path(os.environ["RUNNER_TEMP"]) / "bundle-windows" / "nvidia"
-          target = Path(os.environ["RUNNER_TEMP"]) / "dnn-nvidia-windows-x86_64.zip"
-          with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
-              for path in sorted(root.rglob("*")):
-                  if path.is_file():
-                      archive.write(path, path.relative_to(root.parent))
-          PY
-
       - name: Read package metadata
         id: package
         shell: bash
         run: |
-          set -euo pipefail
-          name="$(sed -n 's/^name = //p' quidra.package)"
-          version="$(sed -n 's/^version = //p' quidra.package)"
-          requirement="$(sed -n 's/^requires\.quidra = //p' quidra.package)"
-          baseline="$(printf '%s\n' "$requirement" | sed -n 's/^>=\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*$/\1/p')"
-          test "$name" = "dnn"
-          test -n "$version"
-          test -n "$baseline"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "baseline=$baseline" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          import os, re, tomllib
+          from pathlib import Path
+          project = tomllib.loads(Path("project.toml").read_text(encoding="utf-8"))
+          package = project["package"]
+          if package["import"] != "dnn":
+              raise SystemExit("project.toml package.import must be dnn")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              print(f"version={package['version']}", file=out)
+          PY
 
       - name: Ensure release tag is new
-        shell: bash
         run: |
-          set -euo pipefail
           tag="v${{ steps.package.outputs.version }}"
-          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
-            echo "release tag $tag already exists" >&2
-            exit 1
-          fi
+          ! git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1
 
-      - name: Require released Quidra baseline
+      - name: Require same-version released dependencies
         shell: bash
         run: |
           set -euo pipefail
-          baseline="v${{ steps.package.outputs.baseline }}"
-          if ! git ls-remote --exit-code --tags https://github.com/quidra-lang/quidra.git "refs/tags/$baseline" >/dev/null 2>&1; then
-            echo "DNN release is blocked until Core $baseline exists" >&2
-            exit 1
-          fi
+          version="${{ steps.package.outputs.version }}"
+          for repo in quidra math nn
+          do
+            if ! git ls-remote --exit-code --tags "https://github.com/quidra-lang/$repo.git" "refs/tags/v$version" >/dev/null 2>&1; then
+              echo "DNN release is blocked until $repo v$version exists" >&2
+              exit 1
+            fi
+          done
 
       - uses: actions/checkout@v4
         with:
           repository: quidra-lang/quidra
-          ref: v${{ steps.package.outputs.baseline }}
+          ref: v${{ steps.package.outputs.version }}
           path: quidra
-      - name: Restore Quidra compiler cache
-        uses: actions/cache@v4
+      - uses: actions/checkout@v4
         with:
-          path: ~/.cache/ccache
-          key: ccache-${{ runner.os }}-quidra-${{ hashFiles('quidra/CMakeLists.txt', 'quidra/src/**', 'quidra/include/**') }}
-          restore-keys: |
-            ccache-${{ runner.os }}-quidra-
-
-
+          repository: quidra-lang/math
+          ref: v${{ steps.package.outputs.version }}
+          path: math
+      - uses: actions/checkout@v4
+        with:
+          repository: quidra-lang/nn
+          ref: v${{ steps.package.outputs.version }}
+          path: nn
+      - name: Expose released package dependencies
+        run: |
+          ln -s "$GITHUB_WORKSPACE/math" "$(dirname "$GITHUB_WORKSPACE")/math"
+          ln -s "$GITHUB_WORKSPACE/nn" "$(dirname "$GITHUB_WORKSPACE")/nn"
       - name: Install Quidra dependencies
-        run: sudo apt-get update && sudo apt-get install -y ccache clang llvm libcurl4-openssl-dev libpng-dev libjpeg-dev libtiff-dev libwebp-dev libavformat-dev libavcodec-dev libavutil-dev libswscale-dev
-
-      - name: Build released Quidra baseline
+        run: sudo apt-get update && sudo apt-get install -y ccache clang llvm libcurl4-openssl-dev
+      - name: Build released Core
         run: cmake -S quidra -B quidra/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && cmake --build quidra/build --parallel
-
-      - name: Integration tests
-        run: bash tests/integration.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
-
-      - name: Additional tests
-        run: bash tests/contracts.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
-
+      - name: Validate package metadata
+        run: quidra/build/quidra package validate "$GITHUB_WORKSPACE"
+      - name: Test DNN architectures
+        run: |
+          bash tests/integration.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
+          bash tests/contracts.sh "$GITHUB_WORKSPACE/quidra/build/quidra"
       - name: Check example
         env:
           QUIDRA_PACKAGE_PATH: ${{ github.workspace }}/..
         run: quidra/build/quidra check examples/training.qui
-
       - name: Create immutable tag and GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          set -euo pipefail
           tag="v${{ steps.package.outputs.version }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$tag" "$GITHUB_SHA" -m "dnn $tag"
           git push origin "$tag"
-          gh release create "$tag" --target "$GITHUB_SHA" --title "dnn $tag" --generate-notes \
-            "$RUNNER_TEMP/dnn-nvidia-linux-x86_64.tar.xz" \
-            "$RUNNER_TEMP/dnn-nvidia-windows-x86_64.zip"
+          gh release create "$tag" --target "$GITHUB_SHA" --title "dnn $tag" --generate-notes

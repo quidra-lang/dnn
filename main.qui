@@ -1,1115 +1,17 @@
-// The execution mode is a nested namespace: dnn.mode.fast() and
-// dnn.mode.deterministic().
-public import mode = "./mode.qui"
+import nn
+import math
 import internal = "./internal.qui"
 
-class Parameter<T: floating>
-    private ref.Cell<tensor<T>> storage
-    private autograd.Target gradient_state
-
-    construct(tensor<T> value)
-        if value.is_tracked()
-            storage = ref.Cell<tensor<T>>(value = value.untrack())
-        else
-            storage = ref.Cell<tensor<T>>(value = value)
-        gradient_state = autograd.target()
-
-    tensor<T> raw()
-        if storage.value.is_tracked()
-            return storage.value.untrack()
-        return storage.value
-
-    tensor<T> track()
-        return storage.value.track(&gradient_state)
-
-    bool has_grad()
-        return gradient_state.has_grad()
-
-    tensor<T> gradient()
-        return gradient_state.gradient<T>()
-
-    void clear_grad()
-        gradient_state.clear_grad()
-
-    bool same(Parameter<T> other)
-        return storage.same(other.storage)
-
-    void replace(tensor<T> value)
-        if value.is_tracked()
-            storage.value = value.untrack()
-        else
-            storage.value = value
-
-class State<T: floating>
-    private ref.Cell<tensor<T>> storage
-
-    construct(tensor<T> value)
-        if value.is_tracked()
-            storage = ref.Cell<tensor<T>>(value = value.untrack())
-        else
-            storage = ref.Cell<tensor<T>>(value = value)
-
-    tensor<T> raw()
-        if storage.value.is_tracked()
-            return storage.value.untrack()
-        return storage.value
-
-    bool same(State<T> other)
-        return storage.same(other.storage)
-
-    void replace(tensor<T> value)
-        if value.is_tracked()
-            storage.value = value.untrack()
-        else
-            storage.value = value
-
-// Explicit DNN distributed-training collective. `devices` gives the destination
-// of each reduced value: -1 means CPU, otherwise the explicit GPU index.
-// The baseline implementation stages through CPU using generic Core transfers;
-// a backend may replace the transport without changing this source-visible
-// policy or silently cutting an autograd graph.
-void | error all_reduce_sum<T: floating>(
-    tensor<T>[] &values,
-    int[] devices
-)
-    if len(values) != len(devices)
-        return error("dnn.all_reduce_sum requires one destination device per tensor")
-    if len(values) == 0
-        return
-
-    int[] shape = values[0].shape()
-    for index in range(len(values))
-        if values[index].is_tracked()
-            return error("dnn.all_reduce_sum requires untracked tensors; reduce gradients after backward or call untrack() explicitly")
-        if values[index].shape() != shape
-            return error("dnn.all_reduce_sum requires identical tensor shapes")
-        if devices[index] < -1
-            return error("dnn.all_reduce_sum device must be -1 for CPU or a nonnegative GPU index")
-
-    tensor<T> total = values[0].cpu()
-    for index in range(1, len(values))
-        total = total + values[index].cpu()
-
-    // Build every destination first so an invalid GPU destination cannot leave
-    // only a prefix of the caller's array replaced.
-    tensor<T>[] reduced = []
-    for device in devices
-        if device == -1
-            reduced = reduced.append(total)
-        else
-            reduced = reduced.append(total.gpu(device))
-
-    for index in range(len(values))
-        values[index] = reduced[index]
-    return
-
-
-
-void | error save<M>(M model, string path)
-    Parameter<float32>[] parameters32 = reflect.collect<Parameter<float32>>(model)
-    Parameter<float>[] parameters64 = reflect.collect<Parameter<float>>(model)
-    State<float32>[] states32 = reflect.collect<State<float32>>(model)
-    State<float>[] states64 = reflect.collect<State<float>>(model)
-
-    file.Handle output = try file.create(path)
-    try output.write_line("QUIDRA_DNN_STATE_V1")
-    try output.write_line(len(parameters32).string())
-    try output.write_line(len(parameters64).string())
-    try output.write_line(len(states32).string())
-    try output.write_line(len(states64).string())
-    for parameter in parameters32
-        try internal.write_state_tensor(&output, parameter.raw())
-    for parameter in parameters64
-        try internal.write_state_tensor(&output, parameter.raw())
-    for state in states32
-        try internal.write_state_tensor(&output, state.raw())
-    for state in states64
-        try internal.write_state_tensor(&output, state.raw())
-    try output.flush()
-    return
-
-void | error load<M>(M &model, string path)
-    file.Handle input = try file.open(path)
-    string | none | error magic_line = input.read_line()
-    string magic
-    match magic_line
-        string
-            magic = magic_line
-        none
-            return error("dnn.load state file is empty")
-        error problem
-            return problem
-    if magic != "QUIDRA_DNN_STATE_V1"
-        return error("dnn.load state file has an unsupported format")
-
-    int[] counts = []
-    for index in range(4)
-        string | none | error count_line = input.read_line()
-        string count_text
-        match count_line
-            string
-                count_text = count_line
-            none
-                return error("dnn.load state header is incomplete")
-            error problem
-                return problem
-        int count = try int.parse(count_text)
-        if count < 0
-            return error("dnn.load state header contains an invalid count")
-        counts = counts.append(count)
-
-    Parameter<float32>[] parameters32 = reflect.collect<Parameter<float32>>(model)
-    Parameter<float>[] parameters64 = reflect.collect<Parameter<float>>(model)
-    State<float32>[] states32 = reflect.collect<State<float32>>(model)
-    State<float>[] states64 = reflect.collect<State<float>>(model)
-    if counts[0] != len(parameters32) or counts[1] != len(parameters64) or counts[2] != len(states32) or counts[3] != len(states64)
-        return error("dnn.load state schema does not match the target model")
-
-    tensor<float32>[] loaded_parameters32 = []
-    tensor<float>[] loaded_parameters64 = []
-    tensor<float32>[] loaded_states32 = []
-    tensor<float>[] loaded_states64 = []
-    for parameter in parameters32
-        tensor<float32> value = try internal.read_state_tensor32(&input)
-        if value.shape() != parameter.raw().shape()
-            return error("dnn.load Parameter<float32> shape does not match")
-        loaded_parameters32 = loaded_parameters32.append(value)
-    for parameter in parameters64
-        tensor<float> value = try internal.read_state_tensor64(&input)
-        if value.shape() != parameter.raw().shape()
-            return error("dnn.load Parameter<float> shape does not match")
-        loaded_parameters64 = loaded_parameters64.append(value)
-    for state in states32
-        tensor<float32> value = try internal.read_state_tensor32(&input)
-        if value.shape() != state.raw().shape()
-            return error("dnn.load State<float32> shape does not match")
-        loaded_states32 = loaded_states32.append(value)
-    for state in states64
-        tensor<float> value = try internal.read_state_tensor64(&input)
-        if value.shape() != state.raw().shape()
-            return error("dnn.load State<float> shape does not match")
-        loaded_states64 = loaded_states64.append(value)
-
-    string | none | error trailing = input.read_line()
-    match trailing
-        string
-            return error("dnn.load state file contains trailing data")
-        none
-            int complete = 0
-        error problem
-            return problem
-
-    for index in range(len(parameters32))
-        parameters32[index].replace(loaded_parameters32[index])
-    for index in range(len(parameters64))
-        parameters64[index].replace(loaded_parameters64[index])
-    for index in range(len(states32))
-        states32[index].replace(loaded_states32[index])
-    for index in range(len(states64))
-        states64[index].replace(loaded_states64[index])
-    return
-
-tensor<float32> | error uniform_weights(int count, float bound, int seed)
-    if count < 0
-        return error("dnn.uniform_weights count must be nonnegative")
-    if not math.is_finite(bound) or bound < 0.0
-        return error("dnn.uniform_weights bound must be finite and nonnegative")
-    tensor<float32> values = tensor.zeros<float32>([count])
-    random.Generator generator = random.generator(seed = seed)
-    for index in range(count)
-        float unit = generator.float()
-        values[index] = float32((unit * 2.0 - 1.0) * bound)
-    return values
-
-tensor<float32> | error normal_weights(
-    int count,
-    float standard_deviation,
-    int seed
-)
-    if count < 0
-        return error("dnn.normal_weights count must be nonnegative")
-    if not math.is_finite(standard_deviation) or standard_deviation < 0.0
-        return error("dnn.normal_weights standard deviation must be finite and nonnegative")
-    tensor<float32> values = tensor.zeros<float32>([count])
-    if standard_deviation == 0.0
-        return values
-
-    random.Generator generator = random.generator(seed = seed)
-    for index in range(count)
-        // 1-u avoids the common zero endpoint; the guard also keeps
-        // Box-Muller defined for any future generator endpoint policy.
-        float radius_uniform = 1.0 - generator.float()
-        if radius_uniform <= 0.0
-            radius_uniform = 0.0000000000000001
-        float angle_uniform = generator.float()
-        float standard_normal = (
-            math.sqrt(-2.0 * math.log(radius_uniform))
-            * math.cos(2.0 * math.pi * angle_uniform)
-        )
-        values[index] = float32(standard_normal * standard_deviation)
-    return values
-
-// A layer is a class whose constructor can fail: `dnn.FC(128, 64)` fails
-// fast on an invalid shape, `try dnn.FC(128, 64)` propagates the error.
-// Declare `dnn.FC layer` and assign `weight` and `bias` to build a layer
-// from tensors you supply.
-class FC
-    Parameter<float32> weight
-    Parameter<float32> bias
-
-    FC | error construct(int features_in, int features_out, int seed = 1)
-        if features_in <= 0 or features_out <= 0
-            return error("dnn.FC requires positive input and output feature counts")
-        if features_out > 9223372036854775807 / features_in
-            return error("dnn.FC dimensions are too large")
-        int weight_count = features_out * features_in
-        float bound = 1.0 / math.sqrt(float(features_in))
-        tensor<float32> weight_values = try uniform_weights(
-            weight_count, bound, seed
-        )
-        weight_values = weight_values.reshape([features_out, features_in])
-        weight = Parameter<float32>(value = weight_values)
-        bias = Parameter<float32>(
-            value = tensor.zeros<float32>([features_out])
-        )
-
-    tensor<float32> forward(tensor<float32> value)
-        int[] input_shape = value.shape()
-        int rank = len(input_shape)
-        if rank < 1
-            error("dnn.FC requires input rank >= 1")
-        int features_in = input_shape[rank - 1]
-        int[] weight_shape = weight.raw().shape()
-        int[] bias_shape = bias.raw().shape()
-        if len(weight_shape) != 2 or len(bias_shape) != 1
-            error("dnn.FC requires rank-2 weight and rank-1 bias")
-        int features_out = weight_shape[0]
-        if weight_shape[1] != features_in or bias_shape[0] != features_out
-            error("dnn.FC input, weight, and bias dimensions do not match")
-
-        int batches = 1
-        for axis in range(rank - 1)
-            batches = batches * input_shape[axis]
-
-        tensor<float32> parameter_weight
-        tensor<float32> parameter_bias
-        if value.is_tracked()
-            parameter_weight = weight.track()
-            parameter_bias = bias.track()
-        else
-            parameter_weight = weight.raw()
-            parameter_bias = bias.raw()
-
-        tensor<float32> matrix_weight = parameter_weight.transpose(0, 1)
-        tensor<float32> output = value.matmul(matrix_weight)
-
-        int[] output_shape = input_shape
-        output_shape[rank - 1] = features_out
-        int output_count = batches * features_out
-        int[] bias_indices = array(output_count, fill = 0)
-        for flat_index in range(output_count)
-            bias_indices[flat_index] = flat_index % features_out
-        tensor<float32> expanded_bias = parameter_bias.gather(
-            bias_indices, output_shape
-        )
-        return output + expanded_bias
-
-class Conv2D
-    Parameter<float32> weight
-    Parameter<float32> bias
-    int step
-    int border
-    int group_count = 1
-
-    Conv2D | error construct(
-        int channels_in,
-        int channels_out,
-        int kernel,
-        int stride = 1,
-        int padding = 0,
-        int seed = 1,
-        int groups = 1
-    )
-        if channels_in <= 0 or channels_out <= 0
-            return error("dnn.Conv2D requires positive input and output channel counts")
-        if kernel <= 0
-            return error("dnn.Conv2D kernel must be positive")
-        if stride <= 0
-            return error("dnn.Conv2D stride must be positive")
-        if padding < 0
-            return error("dnn.Conv2D padding must be nonnegative")
-        if groups <= 0
-            return error("dnn.Conv2D groups must be positive")
-        if channels_in % groups != 0 or channels_out % groups != 0
-            return error("dnn.Conv2D input and output channels must be divisible by groups")
-        if kernel > 9223372036854775807 / kernel
-            return error("dnn.Conv2D dimensions are too large")
-        int kernel_area = kernel * kernel
-        int channels_per_group = channels_in / groups
-        if channels_per_group > 9223372036854775807 / kernel_area
-            return error("dnn.Conv2D dimensions are too large")
-        int fan_in = channels_per_group * kernel_area
-        if channels_out > 9223372036854775807 / fan_in
-            return error("dnn.Conv2D dimensions are too large")
-        int weight_count = channels_out * fan_in
-        float bound = 1.0 / math.sqrt(float(fan_in))
-        tensor<float32> weight_values = try uniform_weights(
-            weight_count, bound, seed
-        )
-        weight_values = weight_values.reshape(
-            [channels_out, channels_per_group, kernel, kernel]
-        )
-        weight = Parameter<float32>(value = weight_values)
-        bias = Parameter<float32>(
-            value = tensor.zeros<float32>([channels_out])
-        )
-        step = stride
-        border = padding
-        group_count = groups
-
-    private tensor<float32> convolve_output_channel(
-        tensor<float32> value,
-        tensor<float32> parameter_weight,
-        tensor<float32> parameter_bias,
-        int output_channel,
-        int batches,
-        int channels_in,
-        int channels_out,
-        int weight_channels,
-        int height,
-        int width,
-        int kernel_height,
-        int kernel_width,
-        int output_height,
-        int output_width
-    )
-        int outputs_per_group = channels_out / group_count
-        int group_index = output_channel / outputs_per_group
-        int input_channel_start = group_index * weight_channels
-
-        int plane_count = batches * height * width
-        int[] input_indices = array(plane_count, fill = 0)
-        for flat_index in range(plane_count)
-            int x = flat_index % width
-            int remaining = flat_index / width
-            int y = remaining % height
-            int batch = remaining / height
-            input_indices[flat_index] = (
-                ((batch * channels_in + input_channel_start) * height + y)
-                * width + x
-            )
-
-        int kernel_count = kernel_height * kernel_width
-        int[] kernel_indices = array(kernel_count, fill = 0)
-        for flat_index in range(kernel_count)
-            int kernel_x = flat_index % kernel_width
-            int kernel_y = flat_index / kernel_width
-            int source_y = kernel_height - 1 - kernel_y
-            int source_x = kernel_width - 1 - kernel_x
-            kernel_indices[flat_index] = (
-                ((output_channel * weight_channels) * kernel_height + source_y)
-                * kernel_width + source_x
-            )
-
-        tensor<float32> input_plane = value.gather(
-            input_indices, [batches, height, width]
-        )
-        tensor<float32> flipped_kernel = parameter_weight.gather(
-            kernel_indices, [kernel_height, kernel_width]
-        )
-        tensor<float32> total = input_plane.convolve(
-            flipped_kernel, stride = step, padding = border
-        )
-
-        for local_channel in range(1, weight_channels)
-            int input_channel = input_channel_start + local_channel
-            for flat_index in range(plane_count)
-                int x = flat_index % width
-                int remaining = flat_index / width
-                int y = remaining % height
-                int batch = remaining / height
-                input_indices[flat_index] = (
-                    ((batch * channels_in + input_channel) * height + y)
-                    * width + x
-                )
-
-            for flat_index in range(kernel_count)
-                int kernel_x = flat_index % kernel_width
-                int kernel_y = flat_index / kernel_width
-                int source_y = kernel_height - 1 - kernel_y
-                int source_x = kernel_width - 1 - kernel_x
-                kernel_indices[flat_index] = (
-                    ((output_channel * weight_channels + local_channel)
-                    * kernel_height + source_y)
-                    * kernel_width + source_x
-                )
-
-            input_plane = value.gather(
-                input_indices, [batches, height, width]
-            )
-            flipped_kernel = parameter_weight.gather(
-                kernel_indices, [kernel_height, kernel_width]
-            )
-            total = total + input_plane.convolve(
-                flipped_kernel, stride = step, padding = border
-            )
-
-        int output_plane_count = batches * output_height * output_width
-        int[] bias_indices = array(output_plane_count, fill = output_channel)
-        tensor<float32> expanded_bias = parameter_bias.gather(
-            bias_indices, [batches, output_height, output_width]
-        )
-        return total + expanded_bias
-
-    tensor<float32> forward(tensor<float32> value)
-        int[] input_shape = value.shape()
-        int[] weight_shape = weight.raw().shape()
-        int[] bias_shape = bias.raw().shape()
-        if len(input_shape) != 4
-            error("dnn.Conv2D requires NCHW rank-4 input")
-        if len(weight_shape) != 4 or len(bias_shape) != 1
-            error("dnn.Conv2D requires OIHW rank-4 weight and rank-1 bias")
-
-        int batches = input_shape[0]
-        int channels_in = input_shape[1]
-        int height = input_shape[2]
-        int width = input_shape[3]
-        int channels_out = weight_shape[0]
-        int weight_channels = weight_shape[1]
-        int kernel_height = weight_shape[2]
-        int kernel_width = weight_shape[3]
-        if batches <= 0 or channels_in <= 0 or channels_out <= 0
-            error("dnn.Conv2D requires positive batch and channel dimensions")
-        if height <= 0 or width <= 0
-            error("dnn.Conv2D requires positive spatial dimensions")
-        if group_count <= 0
-            error("dnn.Conv2D groups must be positive")
-        if channels_in % group_count != 0 or channels_out % group_count != 0
-            error("dnn.Conv2D input and output channels must be divisible by groups")
-        if weight_channels != channels_in / group_count
-            error("dnn.Conv2D input and grouped weight channel dimensions do not match")
-        if kernel_height <= 0 or kernel_width <= 0 or kernel_height != kernel_width
-            error("dnn.Conv2D requires a positive square kernel")
-        if bias_shape[0] != channels_out
-            error("dnn.Conv2D bias dimension does not match output channels")
-        if step <= 0 or border < 0
-            error("dnn.Conv2D requires stride > 0 and padding >= 0")
-
-        int padded_height = height + border * 2
-        int padded_width = width + border * 2
-        if padded_height < kernel_height or padded_width < kernel_width
-            error("dnn.Conv2D kernel is larger than padded input")
-        int output_height = (padded_height - kernel_height) / step + 1
-        int output_width = (padded_width - kernel_width) / step + 1
-
-        tensor<float32> parameter_weight
-        tensor<float32> parameter_bias
-        if value.is_tracked()
-            parameter_weight = weight.track()
-            parameter_bias = bias.track()
-        else
-            parameter_weight = weight.raw()
-            parameter_bias = bias.raw()
-
-        tensor<float32> first_channel = convolve_output_channel(
-            value, parameter_weight, parameter_bias, 0,
-            batches, channels_in, channels_out, weight_channels, height, width,
-            kernel_height, kernel_width, output_height, output_width
-        )
-        int output_plane_count = batches * output_height * output_width
-        int[] output_indices = array(output_plane_count, fill = 0)
-        for flat_index in range(output_plane_count)
-            int x = flat_index % output_width
-            int remaining = flat_index / output_width
-            int y = remaining % output_height
-            int batch = remaining / output_height
-            output_indices[flat_index] = (
-                ((batch * channels_out) * output_height + y)
-                * output_width + x
-            )
-        tensor<float32> output = first_channel.scatter(
-            output_indices,
-            [batches, channels_out, output_height, output_width]
-        )
-
-        for output_channel in range(1, channels_out)
-            tensor<float32> channel_output = convolve_output_channel(
-                value, parameter_weight, parameter_bias, output_channel,
-                batches, channels_in, channels_out, weight_channels,
-                height, width, kernel_height, kernel_width,
-                output_height, output_width
-            )
-            for flat_index in range(output_plane_count)
-                int x = flat_index % output_width
-                int remaining = flat_index / output_width
-                int y = remaining % output_height
-                int batch = remaining / output_height
-                output_indices[flat_index] = (
-                    ((batch * channels_out + output_channel) * output_height + y)
-                    * output_width + x
-                )
-            output = output + channel_output.scatter(
-                output_indices,
-                [batches, channels_out, output_height, output_width]
-            )
-
-        return output
-
-FC | error normal_fc(
-    int features_in,
-    int features_out,
-    float standard_deviation,
-    float bias_value = 0.0,
-    int seed = 1
-)
-    if features_in <= 0 or features_out <= 0
-        return error("dnn.normal_fc requires positive input and output feature counts")
-    if features_out > 9223372036854775807 / features_in
-        return error("dnn.normal_fc dimensions are too large")
-    if not math.is_finite(bias_value)
-        return error("dnn.normal_fc bias must be finite")
-
-    int weight_count = features_out * features_in
-    tensor<float32> weight_values = try normal_weights(
-        weight_count, standard_deviation, seed
-    )
-
-    float32 bias32 = try float32(bias_value)
-    FC layer
-    layer.weight = Parameter<float32>(
-        value = weight_values.reshape([features_out, features_in])
-    )
-    layer.bias = Parameter<float32>(
-        value = tensor.ones<float32>([features_out]) * bias32
-    )
-    return layer
-
-Conv2D | error normal_conv2d(
-    int channels_in,
-    int channels_out,
-    int kernel,
-    float standard_deviation,
-    float bias_value = 0.0,
-    int stride = 1,
-    int padding = 0,
-    int seed = 1,
-    int groups = 1
-)
-    if channels_in <= 0 or channels_out <= 0
-        return error("dnn.normal_conv2d requires positive input and output channel counts")
-    if kernel <= 0
-        return error("dnn.normal_conv2d kernel must be positive")
-    if stride <= 0
-        return error("dnn.normal_conv2d stride must be positive")
-    if padding < 0
-        return error("dnn.normal_conv2d padding must be nonnegative")
-    if groups <= 0
-        return error("dnn.normal_conv2d groups must be positive")
-    if channels_in % groups != 0 or channels_out % groups != 0
-        return error("dnn.normal_conv2d input and output channels must be divisible by groups")
-    if not math.is_finite(bias_value)
-        return error("dnn.normal_conv2d bias must be finite")
-    if kernel > 9223372036854775807 / kernel
-        return error("dnn.normal_conv2d dimensions are too large")
-
-    int kernel_area = kernel * kernel
-    int channels_per_group = channels_in / groups
-    if channels_per_group > 9223372036854775807 / kernel_area
-        return error("dnn.normal_conv2d dimensions are too large")
-    int fan_in = channels_per_group * kernel_area
-    if channels_out > 9223372036854775807 / fan_in
-        return error("dnn.normal_conv2d dimensions are too large")
-    int weight_count = channels_out * fan_in
-
-    tensor<float32> weight_values = try normal_weights(
-        weight_count, standard_deviation, seed
-    )
-    float32 bias32 = try float32(bias_value)
-    Conv2D layer
-    layer.weight = Parameter<float32>(
-        value = weight_values.reshape(
-            [channels_out, channels_per_group, kernel, kernel]
-        )
-    )
-    layer.bias = Parameter<float32>(
-        value = tensor.ones<float32>([channels_out]) * bias32
-    )
-    layer.step = stride
-    layer.border = padding
-    layer.group_count = groups
-    return layer
-
-
-tensor<float32> max_pool2d(
-    tensor<float32> value,
-    int kernel,
-    int stride,
-    int padding = 0
-)
-    int[] shape = value.shape()
-    if len(shape) != 4
-        error("dnn.max_pool2d requires NCHW rank-4 input")
-    if kernel <= 0 or stride <= 0 or padding < 0
-        error("dnn.max_pool2d requires kernel/stride > 0 and padding >= 0")
-    int batches = shape[0]
-    int channels = shape[1]
-    int height = shape[2]
-    int width = shape[3]
-    if batches <= 0 or channels <= 0 or height <= 0 or width <= 0
-        error("dnn.max_pool2d requires positive input dimensions")
-    int padded_height = height + padding * 2
-    int padded_width = width + padding * 2
-    if padded_height < kernel or padded_width < kernel
-        error("dnn.max_pool2d kernel is larger than padded input")
-    int output_height = (padded_height - kernel) / stride + 1
-    int output_width = (padded_width - kernel) / stride + 1
-    int[] output_shape = [batches, channels, output_height, output_width]
-    tensor<float32> output = (
-        value.untrack().gather([0], [1]) * float32(0)
-    ).scatter([0], output_shape)
-
-    for channel in range(channels)
-        for output_y in range(output_height)
-            for output_x in range(output_width)
-                int start_y = output_y * stride - padding
-                int start_x = output_x * stride - padding
-                int valid_count = 0
-                for kernel_y in range(kernel)
-                    int source_y = start_y + kernel_y
-                    if source_y >= 0 and source_y < height
-                        for kernel_x in range(kernel)
-                            int source_x = start_x + kernel_x
-                            if source_x >= 0 and source_x < width
-                                valid_count = valid_count + 1
-                if valid_count <= 0
-                    error("dnn.max_pool2d produced an empty pooling window")
-
-                int[] input_indices = array(
-                    batches * valid_count, fill = 0
-                )
-                int cursor = 0
-                for batch in range(batches)
-                    for kernel_y in range(kernel)
-                        int source_y = start_y + kernel_y
-                        if source_y >= 0 and source_y < height
-                            for kernel_x in range(kernel)
-                                int source_x = start_x + kernel_x
-                                if source_x >= 0 and source_x < width
-                                    input_indices[cursor] = (
-                                        ((batch * channels + channel) * height + source_y)
-                                        * width + source_x
-                                    )
-                                    cursor = cursor + 1
-
-                tensor<float32> window = value.gather(
-                    input_indices, [batches, valid_count]
-                )
-                // max_last preserves shape by broadcasting each row maximum;
-                // gather one representative value per batch for the pool output.
-                tensor<float32> maxima = window.max_last()
-                int[] maximum_indices = array(batches, fill = 0)
-                for batch in range(batches)
-                    maximum_indices[batch] = batch * valid_count
-                tensor<float32> pooled = maxima.gather(
-                    maximum_indices, [batches]
-                )
-                int[] output_indices = array(batches, fill = 0)
-                for batch in range(batches)
-                    output_indices[batch] = (
-                        ((batch * channels + channel) * output_height + output_y)
-                        * output_width + output_x
-                    )
-                output = output + pooled.scatter(output_indices, output_shape)
-    return output
-
-tensor<float32> global_average_pool2d(tensor<float32> value)
-    int[] shape = value.shape()
-    if len(shape) != 4
-        error("dnn.global_average_pool2d requires NCHW rank-4 input")
-    int batches = shape[0]
-    int channels = shape[1]
-    int height = shape[2]
-    int width = shape[3]
-    if batches <= 0 or channels <= 0 or height <= 0 or width <= 0
-        error("dnn.global_average_pool2d requires positive input dimensions")
-    if height > 9223372036854775807 / width
-        error("dnn.global_average_pool2d input is too large")
-    int count = height * width
-    if channels > 9223372036854775807 / count
-        error("dnn.global_average_pool2d input is too large")
-    int batch_count = channels * count
-    if batches > 9223372036854775807 / batch_count
-        error("dnn.global_average_pool2d input is too large")
-    int total_count = batches * batch_count
-
-    // gather() works on logical tensor indices and preserves autograd, so it
-    // makes a contiguous reduction view without cutting a tracked graph.
-    int[] flatten_indices = array(total_count, fill = 0)
-    for index in range(total_count)
-        flatten_indices[index] = index
-    tensor<float32> flattened = value.gather(
-        flatten_indices, [batches, channels, count]
-    )
-
-    // sum_last preserves the reduced axis by broadcasting the sum. Select
-    // one representative from each spatial plane after dividing by its size.
-    tensor<float32> means = flattened.sum_last() / float32(count)
-    int output_count = batches * channels
-    int[] indices = array(output_count, fill = 0)
-    for index in range(output_count)
-        indices[index] = index * count
-    return means.gather(indices, [batches, channels])
-
-tensor<float32> local_response_normalization(
-    tensor<float32> value,
-    int size = 5,
-    float alpha = 0.0001,
-    float beta = 0.75,
-    float k = 2.0
-)
-    int[] shape = value.shape()
-    if len(shape) != 4
-        error("dnn.local_response_normalization requires NCHW rank-4 input")
-    if size <= 0 or size % 2 == 0
-        error("dnn.local_response_normalization size must be positive and odd")
-    if not math.is_finite(alpha) or alpha < 0.0
-        error("dnn.local_response_normalization alpha must be finite and nonnegative")
-    if not math.is_finite(beta) or beta <= 0.0
-        error("dnn.local_response_normalization beta must be finite and positive")
-    if not math.is_finite(k) or k <= 0.0
-        error("dnn.local_response_normalization k must be finite and positive")
-
-    int batches = shape[0]
-    int channels = shape[1]
-    int height = shape[2]
-    int width = shape[3]
-    if batches <= 0 or channels <= 0 or height <= 0 or width <= 0
-        error("dnn.local_response_normalization requires positive input dimensions")
-
-    tensor<float32> output = (
-        value.untrack().gather([0], [1]) * float32(0)
-    ).scatter([0], shape)
-    int plane_count = batches * height * width
-    int radius = size / 2
-
-    for channel in range(channels)
-        int first_channel = channel - radius
-        if first_channel < 0
-            first_channel = 0
-        int last_channel = channel + radius
-        if last_channel >= channels
-            last_channel = channels - 1
-
-        int[] current_indices = array(plane_count, fill = 0)
-        for flat_index in range(plane_count)
-            int x = flat_index % width
-            int remaining = flat_index / width
-            int y = remaining % height
-            int batch = remaining / height
-            current_indices[flat_index] = (
-                ((batch * channels + channel) * height + y) * width + x
-            )
-        tensor<float32> current = value.gather(
-            current_indices, [batches, height, width]
-        )
-        tensor<float32> square_sum = current.untrack() * float32(0)
-
-        for neighbor in range(first_channel, last_channel + 1)
-            int[] neighbor_indices = array(plane_count, fill = 0)
-            for flat_index in range(plane_count)
-                int x = flat_index % width
-                int remaining = flat_index / width
-                int y = remaining % height
-                int batch = remaining / height
-                neighbor_indices[flat_index] = (
-                    ((batch * channels + neighbor) * height + y) * width + x
-                )
-            tensor<float32> neighbor_value = value.gather(
-                neighbor_indices, [batches, height, width]
-            )
-            square_sum = square_sum + neighbor_value * neighbor_value
-
-        float32 base_k = float32(k)
-        float32 coefficient = float32(alpha)
-        float32 exponent = float32(beta)
-        tensor<float32> base = base_k + square_sum * coefficient
-        tensor<float32> denominator = (
-            base.log() * exponent
-        ).exp()
-        tensor<float32> normalized = current / denominator
-        output = output + normalized.scatter(current_indices, shape)
-
-    return output
-
-class BatchNorm
-    Parameter<float32> scale
-    Parameter<float32> bias
-    State<float32> running_mean
-    State<float32> running_variance
-    float32 running_momentum
-    float32 variance_epsilon
-
-    BatchNorm | error construct(
-        int features,
-        float momentum = 0.1,
-        float epsilon = 0.00001
-    )
-        if features <= 0
-            return error("dnn.BatchNorm features must be positive")
-        if not math.is_finite(momentum) or momentum < 0.0 or momentum >= 1.0
-            return error("dnn.BatchNorm momentum must be finite and in [0, 1)")
-        if not math.is_finite(epsilon) or epsilon <= 0.0
-            return error("dnn.BatchNorm epsilon must be finite and positive")
-        scale = Parameter<float32>(
-            value = tensor.ones<float32>([features])
-        )
-        bias = Parameter<float32>(
-            value = tensor.zeros<float32>([features])
-        )
-        running_mean = State<float32>(value = tensor.zeros<float32>([features]))
-        running_variance = State<float32>(value = tensor.ones<float32>([features]))
-        running_momentum = try float32(momentum)
-        variance_epsilon = try float32(epsilon)
-
-    private tensor<float32> normalize_value(
-        tensor<float32> value,
-        bool training
-    )
-        int[] shape = value.shape()
-        int rank = len(shape)
-        if rank < 2
-            error("dnn.BatchNorm requires rank >= 2 with feature/channel axis 1")
-
-        int features = shape[1]
-        if features <= 0
-            error("dnn.BatchNorm feature/channel dimension must be positive")
-        int[] scale_shape = scale.raw().shape()
-        int[] bias_shape = bias.raw().shape()
-        int[] mean_shape = running_mean.raw().shape()
-        int[] variance_shape = running_variance.raw().shape()
-        if len(scale_shape) != 1 or len(bias_shape) != 1
-            error("dnn.BatchNorm requires rank-1 scale and bias")
-        if len(mean_shape) != 1 or len(variance_shape) != 1
-            error("dnn.BatchNorm requires rank-1 running state")
-        if scale_shape[0] != features or bias_shape[0] != features
-            error("dnn.BatchNorm parameter dimensions do not match input features")
-        if mean_shape[0] != features or variance_shape[0] != features
-            error("dnn.BatchNorm running state dimensions do not match input features")
-
-        int inner = 1
-        for axis in range(2, rank)
-            if shape[axis] < 0
-                error("dnn.BatchNorm received an invalid tensor shape")
-            if shape[axis] != 0 and inner > 9223372036854775807 / shape[axis]
-                error("dnn.BatchNorm tensor shape is too large")
-            inner = inner * shape[axis]
-        if shape[0] < 0
-            error("dnn.BatchNorm received an invalid tensor shape")
-        if inner != 0 and shape[0] > 9223372036854775807 / inner
-            error("dnn.BatchNorm tensor shape is too large")
-        int samples = shape[0] * inner
-        if training and samples == 0
-            error("dnn.BatchNorm training requires at least one sample per feature")
-
-        tensor<float32> parameter_scale
-        tensor<float32> parameter_bias
-        if value.is_tracked()
-            parameter_scale = scale.track()
-            parameter_bias = bias.track()
-        else
-            parameter_scale = scale.raw()
-            parameter_bias = bias.raw()
-
-        tensor<float32> output = value * float32(0)
-        tensor<float32> next_running_mean = running_mean.raw() * float32(0)
-        tensor<float32> next_running_variance = running_variance.raw() * float32(0)
-
-        for feature in range(features)
-            int[] indices = array(samples, fill = 0)
-            for sample in range(samples)
-                int outer = sample / inner
-                int offset = sample % inner
-                indices[sample] = ((outer * features + feature) * inner) + offset
-
-            tensor<float32> feature_values = value.gather(indices, [samples])
-            tensor<float32> mean
-            tensor<float32> variance
-
-            if training
-                mean = feature_values.mean().reshape([1])
-                tensor<float32> centered = feature_values - mean
-                variance = (centered * centered).mean().reshape([1])
-
-                tensor<float32> old_mean = running_mean.raw().gather(
-                    [feature], [1]
-                )
-                tensor<float32> old_variance = running_variance.raw().gather(
-                    [feature], [1]
-                )
-                tensor<float32> updated_mean = (
-                    old_mean * (float32(1) - running_momentum)
-                    + mean.untrack() * running_momentum
-                )
-                tensor<float32> updated_variance = (
-                    old_variance * (float32(1) - running_momentum)
-                    + variance.untrack() * running_momentum
-                )
-
-                tensor<float32> mean_piece = updated_mean.scatter(
-                    [feature], [features]
-                )
-                tensor<float32> variance_piece = updated_variance.scatter(
-                    [feature], [features]
-                )
-                next_running_mean = next_running_mean + mean_piece
-                next_running_variance = next_running_variance + variance_piece
-            else
-                mean = running_mean.raw().gather([feature], [1])
-                variance = running_variance.raw().gather([feature], [1])
-
-            tensor<float32> denominator = (
-                (variance + variance_epsilon).log() * float32(0.5)
-            ).exp()
-            tensor<float32> feature_scale = parameter_scale.gather(
-                [feature], [1]
-            )
-            tensor<float32> feature_bias = parameter_bias.gather(
-                [feature], [1]
-            )
-            tensor<float32> normalized = (
-                (feature_values - mean) / denominator
-            ) * feature_scale + feature_bias
-            tensor<float32> piece = normalized.scatter(indices, shape)
-            output = output + piece
-
-        if training
-            running_mean.replace(next_running_mean)
-            running_variance.replace(next_running_variance)
-        return output
-
-    tensor<float32> forward(tensor<float32> value)
-        return normalize_value(value, true)
-
-    tensor<float32> infer(tensor<float32> value)
-        return normalize_value(value, false)
-
-class Dropout
-    float drop_rate
-    random.Generator rng
-    bool inverted_scaling
-
-    Dropout | error construct(
-        float rate,
-        int seed = 0,
-        bool inverted = true
-    )
-        if not math.is_finite(rate) or rate < 0.0 or rate >= 1.0
-            return error("dnn.Dropout rate must be finite and in [0, 1)")
-        drop_rate = rate
-        rng = random.generator(seed = seed)
-        inverted_scaling = inverted
-
-    tensor<float32> forward(tensor<float32> value)
-        if drop_rate == 0.0
-            return value
-
-        int[] shape = value.shape()
-        int count = 1
-        for axis in range(len(shape))
-            if shape[axis] < 0
-                error("dnn.Dropout received an invalid tensor shape")
-            if shape[axis] != 0 and count > 9223372036854775807 / shape[axis]
-                error("dnn.Dropout tensor is too large")
-            count = count * shape[axis]
-
-        tensor<float32> mask = (value.untrack() * float32(0)).reshape([count])
-        float scale = 1.0
-        if inverted_scaling
-            scale = 1.0 / (1.0 - drop_rate)
-        for index in range(count)
-            if rng.float() < drop_rate
-                mask[index] = float32(0)
-            else
-                mask[index] = float32(scale)
-
-        return value * mask.reshape(shape)
-
-    tensor<float32> infer(tensor<float32> value)
-        if inverted_scaling
-            return value
-        float32 keep = float32(1.0 - drop_rate)
-        return value * keep
-
-tensor<float32> relu(tensor<float32> value)
-    return (value + value.abs()) / 2.0
-
-tensor<float32> tanh(tensor<float32> value)
-    tensor<float32> lifted = (value - 20.0 + (value + 20.0).abs()) / 2.0
-    tensor<float32> limited = (lifted + 20.0 - (lifted - 20.0).abs()) / 2.0
-    tensor<float32> exponent = (limited * 2.0).exp()
-    return (exponent - 1.0) / (exponent + 1.0)
-
-tensor<float32> sigmoid(tensor<float32> value)
-    return (tanh(value * 0.5) + 1.0) * 0.5
-
-tensor<float32> softmax(tensor<float32> value)
-    tensor<float32> shifted = value - value.max_last()
-    tensor<float32> weights = shifted.exp()
-    return weights / weights.sum_last()
-
-tensor<float32> gelu(tensor<float32> value)
-    tensor<float32> cubic = value * value * value
-    tensor<float32> inner = (value + cubic * float32(0.044715)) * float32(0.7978845608028654)
-    return value * 0.5 * (1.0 + tanh(inner))
-
-tensor<float32> mse(tensor<float32> prediction, tensor<float32> target)
-    tensor<float32> difference = prediction - target
-    return (difference * difference).mean()
-
-tensor<float32> binary_cross_entropy(
-    tensor<float32> prediction,
-    tensor<float32> target
-)
-    tensor<float32> lifted = (
-        prediction + float32(0.000001)
-        + (prediction - float32(0.000001)).abs()
-    ) / 2.0
-    tensor<float32> limited = (
-        lifted + float32(0.999999)
-        - (lifted - float32(0.999999)).abs()
-    ) / 2.0
-    tensor<float32> first = target * limited.log()
-    tensor<float32> second = (1.0 - target) * (1.0 - limited).log()
-    return (0.0 - first - second).mean()
-
-tensor<float32> binary_cross_entropy_with_logits(
-    tensor<float32> logits,
-    tensor<float32> target
-)
-    tensor<float32> magnitude = logits.abs()
-    tensor<float32> positive = (logits + magnitude) / 2.0
-    tensor<float32> tail = (1.0 + (0.0 - magnitude).exp()).log()
-    return (positive - logits * target + tail).mean()
-
-tensor<float32> cross_entropy(
-    tensor<float32> logits,
-    tensor<float32> target
-)
-    tensor<float32> shifted = logits - logits.max_last()
-    tensor<float32> total = shifted.exp().sum_last()
-    tensor<float32> log_probabilities = shifted - total.log()
-    tensor<float32> per_class = target * log_probabilities
-    return (0.0 - per_class.sum_last()).mean()
-
-
-
+// DNN is the architecture layer above the generic NN package.
+// Reusable layers, activations, losses, optimizers, persistence, distributed
+// training, native kernels, and compiler fusion policy are owned by NN.
 
 class model.ImageNetFC4096
-    FC fc1
-    FC fc2
-    FC fc3
-    Dropout dropout1
-    Dropout dropout2
+    nn.FC fc1
+    nn.FC fc2
+    nn.FC fc3
+    nn.Dropout dropout1
+    nn.Dropout dropout2
 
     model.ImageNetFC4096 | error construct(
         int features_in,
@@ -1117,57 +19,57 @@ class model.ImageNetFC4096
         float weight_standard_deviation = 0.01,
         float hidden_bias = 0.0
     )
-        fc1 = try normal_fc(
+        fc1 = try nn.normal_fc(
             features_in, 4096, weight_standard_deviation,
             bias_value = hidden_bias, seed = seed
         )
-        fc2 = try normal_fc(
+        fc2 = try nn.normal_fc(
             4096, 4096, weight_standard_deviation,
             bias_value = hidden_bias, seed = seed + 1
         )
-        fc3 = try normal_fc(
+        fc3 = try nn.normal_fc(
             4096, 1000, weight_standard_deviation,
             bias_value = 0.0, seed = seed + 2
         )
-        dropout1 = try Dropout(0.5, seed + 3, inverted = false)
-        dropout2 = try Dropout(0.5, seed + 4, inverted = false)
+        dropout1 = try nn.Dropout(0.5, seed + 3, inverted = false)
+        dropout2 = try nn.Dropout(0.5, seed + 4, inverted = false)
 
     tensor<float32> forward(tensor<float32> value)
-        tensor<float32> output = dropout1.forward(relu(fc1.forward(value)))
-        output = dropout2.forward(relu(fc2.forward(output)))
+        tensor<float32> output = dropout1.forward(nn.relu(fc1.forward(value)))
+        output = dropout2.forward(nn.relu(fc2.forward(output)))
         return fc3.forward(output)
 
     tensor<float32> infer(tensor<float32> value)
-        tensor<float32> output = dropout1.infer(relu(fc1.forward(value)))
-        output = dropout2.infer(relu(fc2.forward(output)))
+        tensor<float32> output = dropout1.infer(nn.relu(fc1.forward(value)))
+        output = dropout2.infer(nn.relu(fc2.forward(output)))
         return fc3.forward(output)
 
 class model.AlexNet
-    Conv2D conv1
-    Conv2D conv2
-    Conv2D conv3
-    Conv2D conv4
-    Conv2D conv5
+    nn.Conv2D conv1
+    nn.Conv2D conv2
+    nn.Conv2D conv3
+    nn.Conv2D conv4
+    nn.Conv2D conv5
     model.ImageNetFC4096 classifier
 
     model.AlexNet | error construct(int seed = 1)
-        conv1 = try normal_conv2d(
+        conv1 = try nn.normal_conv2d(
             3, 96, 11, 0.01,
             bias_value = 0.0, stride = 4, padding = 2, seed = seed
         )
-        conv2 = try normal_conv2d(
+        conv2 = try nn.normal_conv2d(
             96, 256, 5, 0.01,
             bias_value = 1.0, padding = 2, seed = seed + 1, groups = 2
         )
-        conv3 = try normal_conv2d(
+        conv3 = try nn.normal_conv2d(
             256, 384, 3, 0.01,
             bias_value = 0.0, padding = 1, seed = seed + 2
         )
-        conv4 = try normal_conv2d(
+        conv4 = try nn.normal_conv2d(
             384, 384, 3, 0.01,
             bias_value = 1.0, padding = 1, seed = seed + 3, groups = 2
         )
-        conv5 = try normal_conv2d(
+        conv5 = try nn.normal_conv2d(
             384, 256, 3, 0.01,
             bias_value = 1.0, padding = 1, seed = seed + 4, groups = 2
         )
@@ -1182,16 +84,16 @@ class model.AlexNet
         // preserves its published 55->27->13->6 spatial sequence and the
         // 6x6x256 = 9216 inputs of the first fully-connected layer.
         internal.require_imagenet_input(value, 224)
-        tensor<float32> output = relu(conv1.forward(value))
-        output = local_response_normalization(output, size = 5, alpha = 0.0001, beta = 0.75, k = 2.0)
-        output = max_pool2d(output, 3, 2)
-        output = relu(conv2.forward(output))
-        output = local_response_normalization(output, size = 5, alpha = 0.0001, beta = 0.75, k = 2.0)
-        output = max_pool2d(output, 3, 2)
-        output = relu(conv3.forward(output))
-        output = relu(conv4.forward(output))
-        output = relu(conv5.forward(output))
-        output = max_pool2d(output, 3, 2)
+        tensor<float32> output = nn.relu(conv1.forward(value))
+        output = nn.local_response_normalization(output, size = 5, alpha = 0.0001, beta = 0.75, k = 2.0)
+        output = nn.max_pool2d(output, 3, 2)
+        output = nn.relu(conv2.forward(output))
+        output = nn.local_response_normalization(output, size = 5, alpha = 0.0001, beta = 0.75, k = 2.0)
+        output = nn.max_pool2d(output, 3, 2)
+        output = nn.relu(conv3.forward(output))
+        output = nn.relu(conv4.forward(output))
+        output = nn.relu(conv5.forward(output))
+        output = nn.max_pool2d(output, 3, 2)
         return output.reshape([value.shape()[0], 9216])
 
     tensor<float32> forward(tensor<float32> value)
@@ -1201,124 +103,124 @@ class model.AlexNet
         return classifier.infer(features(value))
 
     tensor<float32> probabilities(tensor<float32> value)
-        return softmax(infer(value))
+        return nn.softmax(infer(value))
 
 class model.VGGBlock1
-    Conv2D conv1
+    nn.Conv2D conv1
 
     model.VGGBlock1 | error construct(int channels_in, int channels_out, int seed = 1)
-        conv1 = try normal_conv2d(
-            channels_in, channels_out, 3, math.sqrt(0.01),
+        conv1 = try nn.normal_conv2d(
+            channels_in, channels_out, 3, try math.sqrt(float(0.01)),
             padding = 1, seed = seed + 0
         )
 
     tensor<float32> forward(tensor<float32> value)
         tensor<float32> output = value
-        output = relu(conv1.forward(output))
+        output = nn.relu(conv1.forward(output))
         return output
 
 class model.VGGBlock2
-    Conv2D conv1
-    Conv2D conv2
+    nn.Conv2D conv1
+    nn.Conv2D conv2
 
     model.VGGBlock2 | error construct(int channels_in, int channels_out, int seed = 1)
-        conv1 = try normal_conv2d(
-            channels_in, channels_out, 3, math.sqrt(0.01),
+        conv1 = try nn.normal_conv2d(
+            channels_in, channels_out, 3, try math.sqrt(float(0.01)),
             padding = 1, seed = seed + 0
         )
-        conv2 = try normal_conv2d(
-            channels_out, channels_out, 3, math.sqrt(0.01),
+        conv2 = try nn.normal_conv2d(
+            channels_out, channels_out, 3, try math.sqrt(float(0.01)),
             padding = 1, seed = seed + 1
         )
 
     tensor<float32> forward(tensor<float32> value)
         tensor<float32> output = value
-        output = relu(conv1.forward(output))
-        output = relu(conv2.forward(output))
+        output = nn.relu(conv1.forward(output))
+        output = nn.relu(conv2.forward(output))
         return output
 
 class model.VGGBlock3
-    Conv2D conv1
-    Conv2D conv2
-    Conv2D conv3
+    nn.Conv2D conv1
+    nn.Conv2D conv2
+    nn.Conv2D conv3
 
     model.VGGBlock3 | error construct(int channels_in, int channels_out, int seed = 1)
-        conv1 = try normal_conv2d(
-            channels_in, channels_out, 3, math.sqrt(0.01),
+        conv1 = try nn.normal_conv2d(
+            channels_in, channels_out, 3, try math.sqrt(float(0.01)),
             padding = 1, seed = seed + 0
         )
-        conv2 = try normal_conv2d(
-            channels_out, channels_out, 3, math.sqrt(0.01),
+        conv2 = try nn.normal_conv2d(
+            channels_out, channels_out, 3, try math.sqrt(float(0.01)),
             padding = 1, seed = seed + 1
         )
-        conv3 = try normal_conv2d(
-            channels_out, channels_out, 3, math.sqrt(0.01),
+        conv3 = try nn.normal_conv2d(
+            channels_out, channels_out, 3, try math.sqrt(float(0.01)),
             padding = 1, seed = seed + 2
         )
 
     tensor<float32> forward(tensor<float32> value)
         tensor<float32> output = value
-        output = relu(conv1.forward(output))
-        output = relu(conv2.forward(output))
-        output = relu(conv3.forward(output))
+        output = nn.relu(conv1.forward(output))
+        output = nn.relu(conv2.forward(output))
+        output = nn.relu(conv3.forward(output))
         return output
 
 class model.VGGBlockC
-    Conv2D conv1
-    Conv2D conv2
-    Conv2D conv3
+    nn.Conv2D conv1
+    nn.Conv2D conv2
+    nn.Conv2D conv3
 
     model.VGGBlockC | error construct(int channels_in, int channels_out, int seed = 1)
-        conv1 = try normal_conv2d(
-            channels_in, channels_out, 3, math.sqrt(0.01),
+        conv1 = try nn.normal_conv2d(
+            channels_in, channels_out, 3, try math.sqrt(float(0.01)),
             padding = 1, seed = seed + 0
         )
-        conv2 = try normal_conv2d(
-            channels_out, channels_out, 3, math.sqrt(0.01),
+        conv2 = try nn.normal_conv2d(
+            channels_out, channels_out, 3, try math.sqrt(float(0.01)),
             padding = 1, seed = seed + 1
         )
-        conv3 = try normal_conv2d(
-            channels_out, channels_out, 1, math.sqrt(0.01),
+        conv3 = try nn.normal_conv2d(
+            channels_out, channels_out, 1, try math.sqrt(float(0.01)),
             seed = seed + 2
         )
 
     tensor<float32> forward(tensor<float32> value)
         tensor<float32> output = value
-        output = relu(conv1.forward(output))
-        output = relu(conv2.forward(output))
-        output = relu(conv3.forward(output))
+        output = nn.relu(conv1.forward(output))
+        output = nn.relu(conv2.forward(output))
+        output = nn.relu(conv3.forward(output))
         return output
 
 class model.VGGBlock4
-    Conv2D conv1
-    Conv2D conv2
-    Conv2D conv3
-    Conv2D conv4
+    nn.Conv2D conv1
+    nn.Conv2D conv2
+    nn.Conv2D conv3
+    nn.Conv2D conv4
 
     model.VGGBlock4 | error construct(int channels_in, int channels_out, int seed = 1)
-        conv1 = try normal_conv2d(
-            channels_in, channels_out, 3, math.sqrt(0.01),
+        conv1 = try nn.normal_conv2d(
+            channels_in, channels_out, 3, try math.sqrt(float(0.01)),
             padding = 1, seed = seed + 0
         )
-        conv2 = try normal_conv2d(
-            channels_out, channels_out, 3, math.sqrt(0.01),
+        conv2 = try nn.normal_conv2d(
+            channels_out, channels_out, 3, try math.sqrt(float(0.01)),
             padding = 1, seed = seed + 1
         )
-        conv3 = try normal_conv2d(
-            channels_out, channels_out, 3, math.sqrt(0.01),
+        conv3 = try nn.normal_conv2d(
+            channels_out, channels_out, 3, try math.sqrt(float(0.01)),
             padding = 1, seed = seed + 2
         )
-        conv4 = try normal_conv2d(
-            channels_out, channels_out, 3, math.sqrt(0.01),
+        conv4 = try nn.normal_conv2d(
+            channels_out, channels_out, 3, try math.sqrt(float(0.01)),
             padding = 1, seed = seed + 3
         )
 
     tensor<float32> forward(tensor<float32> value)
         tensor<float32> output = value
-        output = relu(conv1.forward(output))
-        output = relu(conv2.forward(output))
-        output = relu(conv3.forward(output))
-        output = relu(conv4.forward(output))
+        output = nn.relu(conv1.forward(output))
+        output = nn.relu(conv2.forward(output))
+        output = nn.relu(conv3.forward(output))
+        output = nn.relu(conv4.forward(output))
         return output
 
 class model.VGGA
@@ -1337,22 +239,22 @@ class model.VGGA
         block5 = try model.VGGBlock2(512, 512, seed + 6)
         classifier = try model.ImageNetFC4096(
             25088, seed + 8,
-            weight_standard_deviation = math.sqrt(0.01),
+            weight_standard_deviation = try math.sqrt(float(0.01)),
             hidden_bias = 0.0
         )
 
     private tensor<float32> features(tensor<float32> value)
         internal.require_imagenet_input(value, 224)
         tensor<float32> output = block1.forward(value)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block2.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block3.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block4.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block5.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         return output.reshape([value.shape()[0], 25088])
 
     tensor<float32> forward(tensor<float32> value)
@@ -1362,7 +264,7 @@ class model.VGGA
         return classifier.infer(features(value))
 
     tensor<float32> probabilities(tensor<float32> value)
-        return softmax(infer(value))
+        return nn.softmax(infer(value))
 
 class model.VGGALRN
     model.VGGBlock1 block1
@@ -1380,23 +282,23 @@ class model.VGGALRN
         block5 = try model.VGGBlock2(512, 512, seed + 6)
         classifier = try model.ImageNetFC4096(
             25088, seed + 8,
-            weight_standard_deviation = math.sqrt(0.01),
+            weight_standard_deviation = try math.sqrt(float(0.01)),
             hidden_bias = 0.0
         )
 
     private tensor<float32> features(tensor<float32> value)
         internal.require_imagenet_input(value, 224)
         tensor<float32> output = block1.forward(value)
-        output = local_response_normalization(output, size = 5, alpha = 0.0001, beta = 0.75, k = 2.0)
-        output = max_pool2d(output, 2, 2)
+        output = nn.local_response_normalization(output, size = 5, alpha = 0.0001, beta = 0.75, k = 2.0)
+        output = nn.max_pool2d(output, 2, 2)
         output = block2.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block3.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block4.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block5.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         return output.reshape([value.shape()[0], 25088])
 
     tensor<float32> forward(tensor<float32> value)
@@ -1406,7 +308,7 @@ class model.VGGALRN
         return classifier.infer(features(value))
 
     tensor<float32> probabilities(tensor<float32> value)
-        return softmax(infer(value))
+        return nn.softmax(infer(value))
 
 class model.VGGB
     model.VGGBlock2 block1
@@ -1424,7 +326,7 @@ class model.VGGB
         block5 = try model.VGGBlock2(512, 512, seed + 8)
         classifier = try model.ImageNetFC4096(
             25088, seed + 10,
-            weight_standard_deviation = math.sqrt(0.01),
+            weight_standard_deviation = try math.sqrt(float(0.01)),
             hidden_bias = 0.0
         )
 
@@ -1450,15 +352,15 @@ class model.VGGB
     private tensor<float32> features(tensor<float32> value)
         internal.require_imagenet_input(value, 224)
         tensor<float32> output = block1.forward(value)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block2.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block3.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block4.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block5.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         return output.reshape([value.shape()[0], 25088])
 
     tensor<float32> forward(tensor<float32> value)
@@ -1468,7 +370,7 @@ class model.VGGB
         return classifier.infer(features(value))
 
     tensor<float32> probabilities(tensor<float32> value)
-        return softmax(infer(value))
+        return nn.softmax(infer(value))
 
 class model.VGGC
     model.VGGBlock2 block1
@@ -1486,7 +388,7 @@ class model.VGGC
         block5 = try model.VGGBlockC(512, 512, seed + 10)
         classifier = try model.ImageNetFC4096(
             25088, seed + 13,
-            weight_standard_deviation = math.sqrt(0.01),
+            weight_standard_deviation = try math.sqrt(float(0.01)),
             hidden_bias = 0.0
         )
 
@@ -1512,15 +414,15 @@ class model.VGGC
     private tensor<float32> features(tensor<float32> value)
         internal.require_imagenet_input(value, 224)
         tensor<float32> output = block1.forward(value)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block2.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block3.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block4.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block5.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         return output.reshape([value.shape()[0], 25088])
 
     tensor<float32> forward(tensor<float32> value)
@@ -1530,7 +432,7 @@ class model.VGGC
         return classifier.infer(features(value))
 
     tensor<float32> probabilities(tensor<float32> value)
-        return softmax(infer(value))
+        return nn.softmax(infer(value))
 
 class model.VGGD
     model.VGGBlock2 block1
@@ -1548,7 +450,7 @@ class model.VGGD
         block5 = try model.VGGBlock3(512, 512, seed + 10)
         classifier = try model.ImageNetFC4096(
             25088, seed + 13,
-            weight_standard_deviation = math.sqrt(0.01),
+            weight_standard_deviation = try math.sqrt(float(0.01)),
             hidden_bias = 0.0
         )
 
@@ -1574,15 +476,15 @@ class model.VGGD
     private tensor<float32> features(tensor<float32> value)
         internal.require_imagenet_input(value, 224)
         tensor<float32> output = block1.forward(value)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block2.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block3.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block4.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block5.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         return output.reshape([value.shape()[0], 25088])
 
     tensor<float32> forward(tensor<float32> value)
@@ -1592,7 +494,7 @@ class model.VGGD
         return classifier.infer(features(value))
 
     tensor<float32> probabilities(tensor<float32> value)
-        return softmax(infer(value))
+        return nn.softmax(infer(value))
 
 class model.VGGE
     model.VGGBlock2 block1
@@ -1610,7 +512,7 @@ class model.VGGE
         block5 = try model.VGGBlock4(512, 512, seed + 12)
         classifier = try model.ImageNetFC4096(
             25088, seed + 16,
-            weight_standard_deviation = math.sqrt(0.01),
+            weight_standard_deviation = try math.sqrt(float(0.01)),
             hidden_bias = 0.0
         )
 
@@ -1636,15 +538,15 @@ class model.VGGE
     private tensor<float32> features(tensor<float32> value)
         internal.require_imagenet_input(value, 224)
         tensor<float32> output = block1.forward(value)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block2.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block3.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block4.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         output = block5.forward(output)
-        output = max_pool2d(output, 2, 2)
+        output = nn.max_pool2d(output, 2, 2)
         return output.reshape([value.shape()[0], 25088])
 
     tensor<float32> forward(tensor<float32> value)
@@ -1654,7 +556,7 @@ class model.VGGE
         return classifier.infer(features(value))
 
     tensor<float32> probabilities(tensor<float32> value)
-        return softmax(infer(value))
+        return nn.softmax(infer(value))
 
 class model.VGG11
     model.VGGA network
@@ -1727,107 +629,107 @@ class model.VGG19
 
 
 class model.ResNetStem
-    Conv2D conv
-    BatchNorm norm
+    nn.Conv2D conv
+    nn.BatchNorm norm
 
     model.ResNetStem | error construct(int seed = 1)
-        conv = try normal_conv2d(
-            3, 64, 7, math.sqrt(2.0 / 147.0),
+        conv = try nn.normal_conv2d(
+            3, 64, 7, try math.sqrt(float(2.0 / 147.0)),
             stride = 2, padding = 3, seed = seed
         )
-        norm = try BatchNorm(64)
+        norm = try nn.BatchNorm(64)
 
     tensor<float32> forward(tensor<float32> value)
-        tensor<float32> output = relu(norm.forward(conv.forward(value)))
-        return max_pool2d(output, 3, 2, padding = 1)
+        tensor<float32> output = nn.relu(norm.forward(conv.forward(value)))
+        return nn.max_pool2d(output, 3, 2, padding = 1)
 
     tensor<float32> infer(tensor<float32> value)
-        tensor<float32> output = relu(norm.infer(conv.forward(value)))
-        return max_pool2d(output, 3, 2, padding = 1)
+        tensor<float32> output = nn.relu(norm.infer(conv.forward(value)))
+        return nn.max_pool2d(output, 3, 2, padding = 1)
 
 class model.ResNetBasicBlock
-    Conv2D conv1
-    BatchNorm norm1
-    Conv2D conv2
-    BatchNorm norm2
+    nn.Conv2D conv1
+    nn.BatchNorm norm1
+    nn.Conv2D conv2
+    nn.BatchNorm norm2
 
     model.ResNetBasicBlock | error construct(int channels, int seed = 1)
-        conv1 = try normal_conv2d(
+        conv1 = try nn.normal_conv2d(
             channels, channels, 3,
-            math.sqrt(2.0 / float(channels * 9)),
+            try math.sqrt(2.0 / float(channels * 9)),
             padding = 1, seed = seed
         )
-        norm1 = try BatchNorm(channels)
-        conv2 = try normal_conv2d(
+        norm1 = try nn.BatchNorm(channels)
+        conv2 = try nn.normal_conv2d(
             channels, channels, 3,
-            math.sqrt(2.0 / float(channels * 9)),
+            try math.sqrt(2.0 / float(channels * 9)),
             padding = 1, seed = seed + 1
         )
-        norm2 = try BatchNorm(channels)
+        norm2 = try nn.BatchNorm(channels)
 
     tensor<float32> forward(tensor<float32> value)
-        tensor<float32> residual = relu(norm1.forward(conv1.forward(value)))
+        tensor<float32> residual = nn.relu(norm1.forward(conv1.forward(value)))
         residual = norm2.forward(conv2.forward(residual))
-        return relu(residual + value)
+        return nn.relu(residual + value)
 
     tensor<float32> infer(tensor<float32> value)
-        tensor<float32> residual = relu(norm1.infer(conv1.forward(value)))
+        tensor<float32> residual = nn.relu(norm1.infer(conv1.forward(value)))
         residual = norm2.infer(conv2.forward(residual))
-        return relu(residual + value)
+        return nn.relu(residual + value)
 
 class model.ResNetBottleneckBlock
-    Conv2D conv1
-    BatchNorm norm1
-    Conv2D conv2
-    BatchNorm norm2
-    Conv2D conv3
-    BatchNorm norm3
+    nn.Conv2D conv1
+    nn.BatchNorm norm1
+    nn.Conv2D conv2
+    nn.BatchNorm norm2
+    nn.Conv2D conv3
+    nn.BatchNorm norm3
 
     model.ResNetBottleneckBlock | error construct(
         int channels,
         int bottleneck,
         int seed = 1
     )
-        conv1 = try normal_conv2d(
+        conv1 = try nn.normal_conv2d(
             channels, bottleneck, 1,
-            math.sqrt(2.0 / float(channels)),
+            try math.sqrt(2.0 / float(channels)),
             seed = seed
         )
-        norm1 = try BatchNorm(bottleneck)
-        conv2 = try normal_conv2d(
+        norm1 = try nn.BatchNorm(bottleneck)
+        conv2 = try nn.normal_conv2d(
             bottleneck, bottleneck, 3,
-            math.sqrt(2.0 / float(bottleneck * 9)),
+            try math.sqrt(2.0 / float(bottleneck * 9)),
             padding = 1, seed = seed + 1
         )
-        norm2 = try BatchNorm(bottleneck)
-        conv3 = try normal_conv2d(
+        norm2 = try nn.BatchNorm(bottleneck)
+        conv3 = try nn.normal_conv2d(
             bottleneck, channels, 1,
-            math.sqrt(2.0 / float(bottleneck)),
+            try math.sqrt(2.0 / float(bottleneck)),
             seed = seed + 2
         )
-        norm3 = try BatchNorm(channels)
+        norm3 = try nn.BatchNorm(channels)
 
     tensor<float32> forward(tensor<float32> value)
-        tensor<float32> residual = relu(norm1.forward(conv1.forward(value)))
-        residual = relu(norm2.forward(conv2.forward(residual)))
+        tensor<float32> residual = nn.relu(norm1.forward(conv1.forward(value)))
+        residual = nn.relu(norm2.forward(conv2.forward(residual)))
         residual = norm3.forward(conv3.forward(residual))
-        return relu(residual + value)
+        return nn.relu(residual + value)
 
     tensor<float32> infer(tensor<float32> value)
-        tensor<float32> residual = relu(norm1.infer(conv1.forward(value)))
-        residual = relu(norm2.infer(conv2.forward(residual)))
+        tensor<float32> residual = nn.relu(norm1.infer(conv1.forward(value)))
+        residual = nn.relu(norm2.infer(conv2.forward(residual)))
         residual = norm3.infer(conv3.forward(residual))
-        return relu(residual + value)
+        return nn.relu(residual + value)
 
 class model.ResNetBottleneckProjectionBlock
-    Conv2D conv1
-    BatchNorm norm1
-    Conv2D conv2
-    BatchNorm norm2
-    Conv2D conv3
-    BatchNorm norm3
-    Conv2D shortcut
-    BatchNorm shortcut_norm
+    nn.Conv2D conv1
+    nn.BatchNorm norm1
+    nn.Conv2D conv2
+    nn.BatchNorm norm2
+    nn.Conv2D conv3
+    nn.BatchNorm norm3
+    nn.Conv2D shortcut
+    nn.BatchNorm shortcut_norm
 
     model.ResNetBottleneckProjectionBlock | error construct(
         int channels_in,
@@ -1838,44 +740,44 @@ class model.ResNetBottleneckProjectionBlock
     )
         // Original ResNet-v1 places the stage-changing stride in the first
         // 1x1 bottleneck convolution (not the later "v1.5" 3x3 placement).
-        conv1 = try normal_conv2d(
+        conv1 = try nn.normal_conv2d(
             channels_in, bottleneck, 1,
-            math.sqrt(2.0 / float(channels_in)),
+            try math.sqrt(2.0 / float(channels_in)),
             stride = stride, seed = seed
         )
-        norm1 = try BatchNorm(bottleneck)
-        conv2 = try normal_conv2d(
+        norm1 = try nn.BatchNorm(bottleneck)
+        conv2 = try nn.normal_conv2d(
             bottleneck, bottleneck, 3,
-            math.sqrt(2.0 / float(bottleneck * 9)),
+            try math.sqrt(2.0 / float(bottleneck * 9)),
             padding = 1, seed = seed + 1
         )
-        norm2 = try BatchNorm(bottleneck)
-        conv3 = try normal_conv2d(
+        norm2 = try nn.BatchNorm(bottleneck)
+        conv3 = try nn.normal_conv2d(
             bottleneck, channels_out, 1,
-            math.sqrt(2.0 / float(bottleneck)),
+            try math.sqrt(2.0 / float(bottleneck)),
             seed = seed + 2
         )
-        norm3 = try BatchNorm(channels_out)
-        shortcut = try normal_conv2d(
+        norm3 = try nn.BatchNorm(channels_out)
+        shortcut = try nn.normal_conv2d(
             channels_in, channels_out, 1,
-            math.sqrt(2.0 / float(channels_in)),
+            try math.sqrt(2.0 / float(channels_in)),
             stride = stride, seed = seed + 3
         )
-        shortcut_norm = try BatchNorm(channels_out)
+        shortcut_norm = try nn.BatchNorm(channels_out)
 
     tensor<float32> forward(tensor<float32> value)
-        tensor<float32> residual = relu(norm1.forward(conv1.forward(value)))
-        residual = relu(norm2.forward(conv2.forward(residual)))
+        tensor<float32> residual = nn.relu(norm1.forward(conv1.forward(value)))
+        residual = nn.relu(norm2.forward(conv2.forward(residual)))
         residual = norm3.forward(conv3.forward(residual))
         tensor<float32> identity = shortcut_norm.forward(shortcut.forward(value))
-        return relu(residual + identity)
+        return nn.relu(residual + identity)
 
     tensor<float32> infer(tensor<float32> value)
-        tensor<float32> residual = relu(norm1.infer(conv1.forward(value)))
-        residual = relu(norm2.infer(conv2.forward(residual)))
+        tensor<float32> residual = nn.relu(norm1.infer(conv1.forward(value)))
+        residual = nn.relu(norm2.infer(conv2.forward(residual)))
         residual = norm3.infer(conv3.forward(residual))
         tensor<float32> identity = shortcut_norm.infer(shortcut.forward(value))
-        return relu(residual + identity)
+        return nn.relu(residual + identity)
 
 class model.ResNetBasicIdentityStage
     model.ResNetBasicBlock[] blocks
@@ -1908,10 +810,10 @@ class model.ResNetBasicIdentityStage
 
 
 class model.ResNetBasicOptionABlock
-    Conv2D conv1
-    BatchNorm norm1
-    Conv2D conv2
-    BatchNorm norm2
+    nn.Conv2D conv1
+    nn.BatchNorm norm1
+    nn.Conv2D conv2
+    nn.BatchNorm norm2
     int output_channels
     int shortcut_stride
 
@@ -1921,40 +823,40 @@ class model.ResNetBasicOptionABlock
         int stride,
         int seed = 1
     )
-        conv1 = try normal_conv2d(
+        conv1 = try nn.normal_conv2d(
             channels_in, channels_out, 3,
-            math.sqrt(2.0 / float(channels_in * 9)),
+            try math.sqrt(2.0 / float(channels_in * 9)),
             stride = stride, padding = 1, seed = seed
         )
-        norm1 = try BatchNorm(channels_out)
-        conv2 = try normal_conv2d(
+        norm1 = try nn.BatchNorm(channels_out)
+        conv2 = try nn.normal_conv2d(
             channels_out, channels_out, 3,
-            math.sqrt(2.0 / float(channels_out * 9)),
+            try math.sqrt(2.0 / float(channels_out * 9)),
             padding = 1, seed = seed + 1
         )
-        norm2 = try BatchNorm(channels_out)
+        norm2 = try nn.BatchNorm(channels_out)
         output_channels = channels_out
         shortcut_stride = stride
 
     tensor<float32> forward(tensor<float32> value)
-        tensor<float32> residual = relu(
+        tensor<float32> residual = nn.relu(
             norm1.forward(conv1.forward(value))
         )
         residual = norm2.forward(conv2.forward(residual))
         tensor<float32> identity = internal.resnet_option_a_shortcut(
             value, output_channels, shortcut_stride
         )
-        return relu(residual + identity)
+        return nn.relu(residual + identity)
 
     tensor<float32> infer(tensor<float32> value)
-        tensor<float32> residual = relu(
+        tensor<float32> residual = nn.relu(
             norm1.infer(conv1.forward(value))
         )
         residual = norm2.infer(conv2.forward(residual))
         tensor<float32> identity = internal.resnet_option_a_shortcut(
             value, output_channels, shortcut_stride
         )
-        return relu(residual + identity)
+        return nn.relu(residual + identity)
 
 class model.ResNetBasicOptionAStage
     model.ResNetBasicOptionABlock first
@@ -2034,7 +936,7 @@ class model.ResNet18
     model.ResNetBasicOptionAStage conv3_x
     model.ResNetBasicOptionAStage conv4_x
     model.ResNetBasicOptionAStage conv5_x
-    FC fc
+    nn.FC fc
 
     model.ResNet18 | error construct(int seed = 1)
         stem = try model.ResNetStem(seed)
@@ -2042,8 +944,8 @@ class model.ResNet18
         conv3_x = try model.ResNetBasicOptionAStage(64, 128, 2, seed + 30)
         conv4_x = try model.ResNetBasicOptionAStage(128, 256, 2, seed + 60)
         conv5_x = try model.ResNetBasicOptionAStage(256, 512, 2, seed + 100)
-        fc = try normal_fc(
-            512, 1000, math.sqrt(2.0 / 512.0),
+        fc = try nn.normal_fc(
+            512, 1000, try math.sqrt(float(2.0 / 512.0)),
             seed = seed + 140
         )
 
@@ -2054,7 +956,7 @@ class model.ResNet18
         output = conv3_x.forward(output)
         output = conv4_x.forward(output)
         output = conv5_x.forward(output)
-        return fc.forward(global_average_pool2d(output))
+        return fc.forward(nn.global_average_pool2d(output))
 
     tensor<float32> infer(tensor<float32> value)
         internal.require_imagenet_input(value, 224)
@@ -2063,10 +965,10 @@ class model.ResNet18
         output = conv3_x.infer(output)
         output = conv4_x.infer(output)
         output = conv5_x.infer(output)
-        return fc.forward(global_average_pool2d(output))
+        return fc.forward(nn.global_average_pool2d(output))
 
     tensor<float32> probabilities(tensor<float32> value)
-        return softmax(infer(value))
+        return nn.softmax(infer(value))
 
 class model.ResNet34
     model.ResNetStem stem
@@ -2074,7 +976,7 @@ class model.ResNet34
     model.ResNetBasicOptionAStage conv3_x
     model.ResNetBasicOptionAStage conv4_x
     model.ResNetBasicOptionAStage conv5_x
-    FC fc
+    nn.FC fc
 
     model.ResNet34 | error construct(int seed = 1)
         stem = try model.ResNetStem(seed)
@@ -2082,8 +984,8 @@ class model.ResNet34
         conv3_x = try model.ResNetBasicOptionAStage(64, 128, 4, seed + 30)
         conv4_x = try model.ResNetBasicOptionAStage(128, 256, 6, seed + 60)
         conv5_x = try model.ResNetBasicOptionAStage(256, 512, 3, seed + 100)
-        fc = try normal_fc(
-            512, 1000, math.sqrt(2.0 / 512.0),
+        fc = try nn.normal_fc(
+            512, 1000, try math.sqrt(float(2.0 / 512.0)),
             seed = seed + 140
         )
 
@@ -2094,7 +996,7 @@ class model.ResNet34
         output = conv3_x.forward(output)
         output = conv4_x.forward(output)
         output = conv5_x.forward(output)
-        return fc.forward(global_average_pool2d(output))
+        return fc.forward(nn.global_average_pool2d(output))
 
     tensor<float32> infer(tensor<float32> value)
         internal.require_imagenet_input(value, 224)
@@ -2103,10 +1005,10 @@ class model.ResNet34
         output = conv3_x.infer(output)
         output = conv4_x.infer(output)
         output = conv5_x.infer(output)
-        return fc.forward(global_average_pool2d(output))
+        return fc.forward(nn.global_average_pool2d(output))
 
     tensor<float32> probabilities(tensor<float32> value)
-        return softmax(infer(value))
+        return nn.softmax(infer(value))
 
 class model.ResNet50
     model.ResNetStem stem
@@ -2114,7 +1016,7 @@ class model.ResNet50
     model.ResNetBottleneckStage conv3_x
     model.ResNetBottleneckStage conv4_x
     model.ResNetBottleneckStage conv5_x
-    FC fc
+    nn.FC fc
 
     model.ResNet50 | error construct(int seed = 1)
         stem = try model.ResNetStem(seed)
@@ -2122,8 +1024,8 @@ class model.ResNet50
         conv3_x = try model.ResNetBottleneckStage(256, 128, 512, 4, 2, seed + 30)
         conv4_x = try model.ResNetBottleneckStage(512, 256, 1024, 6, 2, seed + 70)
         conv5_x = try model.ResNetBottleneckStage(1024, 512, 2048, 3, 2, seed + 190)
-        fc = try normal_fc(
-            2048, 1000, math.sqrt(2.0 / 2048.0),
+        fc = try nn.normal_fc(
+            2048, 1000, try math.sqrt(float(2.0 / 2048.0)),
             seed = seed + 220
         )
 
@@ -2134,7 +1036,7 @@ class model.ResNet50
         output = conv3_x.forward(output)
         output = conv4_x.forward(output)
         output = conv5_x.forward(output)
-        return fc.forward(global_average_pool2d(output))
+        return fc.forward(nn.global_average_pool2d(output))
 
     tensor<float32> infer(tensor<float32> value)
         internal.require_imagenet_input(value, 224)
@@ -2143,10 +1045,10 @@ class model.ResNet50
         output = conv3_x.infer(output)
         output = conv4_x.infer(output)
         output = conv5_x.infer(output)
-        return fc.forward(global_average_pool2d(output))
+        return fc.forward(nn.global_average_pool2d(output))
 
     tensor<float32> probabilities(tensor<float32> value)
-        return softmax(infer(value))
+        return nn.softmax(infer(value))
 
 class model.ResNet101
     model.ResNetStem stem
@@ -2154,7 +1056,7 @@ class model.ResNet101
     model.ResNetBottleneckStage conv3_x
     model.ResNetBottleneckStage conv4_x
     model.ResNetBottleneckStage conv5_x
-    FC fc
+    nn.FC fc
 
     model.ResNet101 | error construct(int seed = 1)
         stem = try model.ResNetStem(seed)
@@ -2162,8 +1064,8 @@ class model.ResNet101
         conv3_x = try model.ResNetBottleneckStage(256, 128, 512, 4, 2, seed + 30)
         conv4_x = try model.ResNetBottleneckStage(512, 256, 1024, 23, 2, seed + 70)
         conv5_x = try model.ResNetBottleneckStage(1024, 512, 2048, 3, 2, seed + 190)
-        fc = try normal_fc(
-            2048, 1000, math.sqrt(2.0 / 2048.0),
+        fc = try nn.normal_fc(
+            2048, 1000, try math.sqrt(float(2.0 / 2048.0)),
             seed = seed + 220
         )
 
@@ -2174,7 +1076,7 @@ class model.ResNet101
         output = conv3_x.forward(output)
         output = conv4_x.forward(output)
         output = conv5_x.forward(output)
-        return fc.forward(global_average_pool2d(output))
+        return fc.forward(nn.global_average_pool2d(output))
 
     tensor<float32> infer(tensor<float32> value)
         internal.require_imagenet_input(value, 224)
@@ -2183,10 +1085,10 @@ class model.ResNet101
         output = conv3_x.infer(output)
         output = conv4_x.infer(output)
         output = conv5_x.infer(output)
-        return fc.forward(global_average_pool2d(output))
+        return fc.forward(nn.global_average_pool2d(output))
 
     tensor<float32> probabilities(tensor<float32> value)
-        return softmax(infer(value))
+        return nn.softmax(infer(value))
 
 class model.ResNet152
     model.ResNetStem stem
@@ -2194,7 +1096,7 @@ class model.ResNet152
     model.ResNetBottleneckStage conv3_x
     model.ResNetBottleneckStage conv4_x
     model.ResNetBottleneckStage conv5_x
-    FC fc
+    nn.FC fc
 
     model.ResNet152 | error construct(int seed = 1)
         stem = try model.ResNetStem(seed)
@@ -2202,8 +1104,8 @@ class model.ResNet152
         conv3_x = try model.ResNetBottleneckStage(256, 128, 512, 8, 2, seed + 30)
         conv4_x = try model.ResNetBottleneckStage(512, 256, 1024, 36, 2, seed + 70)
         conv5_x = try model.ResNetBottleneckStage(1024, 512, 2048, 3, 2, seed + 190)
-        fc = try normal_fc(
-            2048, 1000, math.sqrt(2.0 / 2048.0),
+        fc = try nn.normal_fc(
+            2048, 1000, try math.sqrt(float(2.0 / 2048.0)),
             seed = seed + 220
         )
 
@@ -2214,7 +1116,7 @@ class model.ResNet152
         output = conv3_x.forward(output)
         output = conv4_x.forward(output)
         output = conv5_x.forward(output)
-        return fc.forward(global_average_pool2d(output))
+        return fc.forward(nn.global_average_pool2d(output))
 
     tensor<float32> infer(tensor<float32> value)
         internal.require_imagenet_input(value, 224)
@@ -2223,296 +1125,9 @@ class model.ResNet152
         output = conv3_x.infer(output)
         output = conv4_x.infer(output)
         output = conv5_x.infer(output)
-        return fc.forward(global_average_pool2d(output))
+        return fc.forward(nn.global_average_pool2d(output))
 
     tensor<float32> probabilities(tensor<float32> value)
-        return softmax(infer(value))
+        return nn.softmax(infer(value))
 
 
-class SGD
-    float learning_rate
-    private int iteration
-
-    SGD | error construct(float rate = 0.01)
-        if not math.is_finite(rate) or rate <= 0.0
-            return error("dnn.SGD rate must be finite and positive")
-        learning_rate = rate
-        iteration = 0
-
-    void zero_grad<M>(M &model)
-        Parameter<float32>[] parameters32 = reflect.collect<Parameter<float32>>(model)
-        for parameter in parameters32
-            parameter.clear_grad()
-        Parameter<float>[] parameters64 = reflect.collect<Parameter<float>>(model)
-        for parameter in parameters64
-            parameter.clear_grad()
-
-    void step<M>(M &model)
-        iteration = iteration + int(1)
-        Parameter<float32>[] parameters32 = reflect.collect<Parameter<float32>>(model)
-        float32 rate32 = float32(learning_rate)
-        for parameter in parameters32
-            if parameter.has_grad()
-                tensor<float32> gradient = parameter.gradient().untrack()
-                parameter.replace(parameter.raw() - gradient * rate32)
-
-        Parameter<float>[] parameters64 = reflect.collect<Parameter<float>>(model)
-        for parameter in parameters64
-            if parameter.has_grad()
-                tensor<float> gradient = parameter.gradient().untrack()
-                parameter.replace(parameter.raw() - gradient * learning_rate)
-
-class Adam
-    float learning_rate
-    float first_decay
-    float second_decay
-    float stability
-    private int iteration
-    private Parameter<float32>[] bound32
-    private tensor<float32>[] first32
-    private tensor<float32>[] second32
-    private Parameter<float>[] bound64
-    private tensor<float>[] first64
-    private tensor<float>[] second64
-
-    Adam | error construct(
-        float rate = 0.001,
-        float beta1 = 0.9,
-        float beta2 = 0.999,
-        float epsilon = 0.00000001
-    )
-        if not math.is_finite(rate) or rate <= 0.0
-            return error("dnn.Adam rate must be finite and positive")
-        if not math.is_finite(beta1) or beta1 < 0.0 or beta1 >= 1.0
-            return error("dnn.Adam beta1 must be finite and in [0, 1)")
-        if not math.is_finite(beta2) or beta2 < 0.0 or beta2 >= 1.0
-            return error("dnn.Adam beta2 must be finite and in [0, 1)")
-        if not math.is_finite(epsilon) or epsilon <= 0.0
-            return error("dnn.Adam epsilon must be finite and positive")
-        learning_rate = rate
-        first_decay = beta1
-        second_decay = beta2
-        stability = epsilon
-        iteration = 0
-        bound32 = []
-        first32 = []
-        second32 = []
-        bound64 = []
-        first64 = []
-        second64 = []
-
-    void | error save(string path)
-        file.Handle output = try file.create(path)
-        try output.write_line("QUIDRA_DNN_ADAM_V1")
-        try output.write_line(learning_rate.string())
-        try output.write_line(first_decay.string())
-        try output.write_line(second_decay.string())
-        try output.write_line(stability.string())
-        try output.write_line(iteration.string())
-        try output.write_line(len(first32).string())
-        try output.write_line(len(first64).string())
-        for value in first32
-            try internal.write_state_tensor(&output, value)
-        for value in second32
-            try internal.write_state_tensor(&output, value)
-        for value in first64
-            try internal.write_state_tensor(&output, value)
-        for value in second64
-            try internal.write_state_tensor(&output, value)
-        try output.flush()
-        return
-
-    void | error load<M>(M &model, string path)
-        file.Handle input = try file.open(path)
-        string | none | error magic_line = input.read_line()
-        string magic
-        match magic_line
-            string
-                magic = magic_line
-            none
-                return error("dnn.Adam.load state file is empty")
-            error problem
-                return problem
-        if magic != "QUIDRA_DNN_ADAM_V1"
-            return error("dnn.Adam.load state file has an unsupported format")
-
-        string[] header = []
-        for index in range(7)
-            string | none | error line = input.read_line()
-            match line
-                string
-                    header = header.append(line)
-                none
-                    return error("dnn.Adam.load state header is incomplete")
-                error problem
-                    return problem
-
-        float loaded_learning_rate = try float.parse(header[0])
-        float loaded_first_decay = try float.parse(header[1])
-        float loaded_second_decay = try float.parse(header[2])
-        float loaded_stability = try float.parse(header[3])
-        int loaded_iteration = try int.parse(header[4])
-        int count32 = try int.parse(header[5])
-        int count64 = try int.parse(header[6])
-        if loaded_iteration < 0 or count32 < 0 or count64 < 0
-            return error("dnn.Adam.load state header contains an invalid count")
-        if not math.is_finite(loaded_learning_rate) or loaded_learning_rate <= 0.0
-            return error("dnn.Adam.load learning rate must be finite and positive")
-        if not math.is_finite(loaded_first_decay) or loaded_first_decay < 0.0 or loaded_first_decay >= 1.0
-            return error("dnn.Adam.load beta1 must be finite and in [0, 1)")
-        if not math.is_finite(loaded_second_decay) or loaded_second_decay < 0.0 or loaded_second_decay >= 1.0
-            return error("dnn.Adam.load beta2 must be finite and in [0, 1)")
-        if not math.is_finite(loaded_stability) or loaded_stability <= 0.0
-            return error("dnn.Adam.load epsilon must be finite and positive")
-
-        Parameter<float32>[] parameters32 = reflect.collect<Parameter<float32>>(model)
-        Parameter<float>[] parameters64 = reflect.collect<Parameter<float>>(model)
-        if count32 != len(parameters32) or count64 != len(parameters64)
-            return error("dnn.Adam.load parameter binding does not match the target model")
-
-        tensor<float32>[] loaded_first32 = []
-        tensor<float32>[] loaded_second32 = []
-        tensor<float>[] loaded_first64 = []
-        tensor<float>[] loaded_second64 = []
-        for parameter in parameters32
-            tensor<float32> first = try internal.read_state_tensor32(&input)
-            if first.shape() != parameter.raw().shape()
-                return error("dnn.Adam.load first moment shape does not match")
-            loaded_first32 = loaded_first32.append(first)
-        for parameter in parameters32
-            tensor<float32> second = try internal.read_state_tensor32(&input)
-            if second.shape() != parameter.raw().shape()
-                return error("dnn.Adam.load second moment shape does not match")
-            loaded_second32 = loaded_second32.append(second)
-        for parameter in parameters64
-            tensor<float> first = try internal.read_state_tensor64(&input)
-            if first.shape() != parameter.raw().shape()
-                return error("dnn.Adam.load first moment shape does not match")
-            loaded_first64 = loaded_first64.append(first)
-        for parameter in parameters64
-            tensor<float> second = try internal.read_state_tensor64(&input)
-            if second.shape() != parameter.raw().shape()
-                return error("dnn.Adam.load second moment shape does not match")
-            loaded_second64 = loaded_second64.append(second)
-
-        string | none | error trailing = input.read_line()
-        match trailing
-            string
-                return error("dnn.Adam.load state file contains trailing data")
-            none
-                int complete = 0
-            error problem
-                return problem
-
-        learning_rate = loaded_learning_rate
-        first_decay = loaded_first_decay
-        second_decay = loaded_second_decay
-        stability = loaded_stability
-        iteration = loaded_iteration
-        bound32 = parameters32
-        first32 = loaded_first32
-        second32 = loaded_second32
-        bound64 = parameters64
-        first64 = loaded_first64
-        second64 = loaded_second64
-        return
-
-    void zero_grad<M>(M &model)
-        Parameter<float32>[] parameters32 = reflect.collect<Parameter<float32>>(model)
-        for parameter in parameters32
-            parameter.clear_grad()
-        Parameter<float>[] parameters64 = reflect.collect<Parameter<float>>(model)
-        for parameter in parameters64
-            parameter.clear_grad()
-
-    void step<M>(M &model)
-        Parameter<float32>[] parameters32 = reflect.collect<Parameter<float32>>(model)
-        Parameter<float>[] parameters64 = reflect.collect<Parameter<float>>(model)
-
-        bool changed = len(parameters32) != len(bound32) or len(parameters64) != len(bound64)
-        if not changed
-            for index in range(len(parameters32))
-                if not parameters32[index].same(bound32[index])
-                    changed = true
-            for index in range(len(parameters64))
-                if not parameters64[index].same(bound64[index])
-                    changed = true
-
-        if changed
-            bound32 = parameters32
-            first32 = []
-            second32 = []
-            for parameter in parameters32
-                tensor<float32> zero = parameter.raw() * float32(0)
-                first32 = first32.append(zero)
-                second32 = second32.append(zero)
-
-            bound64 = parameters64
-            first64 = []
-            second64 = []
-            for parameter in parameters64
-                tensor<float> zero = parameter.raw() * 0.0
-                first64 = first64.append(zero)
-                second64 = second64.append(zero)
-            iteration = 0
-
-        if len(parameters32) > 0 or len(parameters64) > 0
-            iteration = iteration + int(1)
-            float correction1 = 1.0 - math.pow(first_decay, float(iteration))
-            float correction2 = 1.0 - math.pow(second_decay, float(iteration))
-
-            float32 beta1_32 = float32(first_decay)
-            float32 beta2_32 = float32(second_decay)
-            float32 one_minus_beta1_32 = float32(1.0 - first_decay)
-            float32 one_minus_beta2_32 = float32(1.0 - second_decay)
-            float32 correction1_32 = float32(correction1)
-            float32 correction2_32 = float32(correction2)
-            float32 epsilon32 = float32(stability)
-            float32 rate32 = float32(learning_rate)
-            for index in range(len(parameters32))
-                Parameter<float32> parameter = parameters32[index]
-                if parameter.has_grad()
-                    tensor<float32> gradient = parameter.gradient().untrack()
-                    tensor<float32> first = (
-                        first32[index] * beta1_32
-                        + gradient * one_minus_beta1_32
-                    )
-                    tensor<float32> second = (
-                        second32[index] * beta2_32
-                        + gradient * gradient * one_minus_beta2_32
-                    )
-                    tensor<float32> first_hat = first / correction1_32
-                    tensor<float32> second_hat = second / correction2_32
-                    tensor<float32> denominator = (
-                        second_hat.log() * float32(0.5)
-                    ).exp() + epsilon32
-                    parameter.replace(
-                        parameter.raw() - (first_hat / denominator) * rate32
-                    )
-                    first32[index] = first
-                    second32[index] = second
-
-            float one_minus_beta1 = 1.0 - first_decay
-            float one_minus_beta2 = 1.0 - second_decay
-            for index in range(len(parameters64))
-                Parameter<float> parameter = parameters64[index]
-                if parameter.has_grad()
-                    tensor<float> gradient = parameter.gradient().untrack()
-                    tensor<float> first = (
-                        first64[index] * first_decay
-                        + gradient * one_minus_beta1
-                    )
-                    tensor<float> second = (
-                        second64[index] * second_decay
-                        + gradient * gradient * one_minus_beta2
-                    )
-                    tensor<float> first_hat = first / correction1
-                    tensor<float> second_hat = second / correction2
-                    tensor<float> denominator = (
-                        second_hat.log() * 0.5
-                    ).exp() + stability
-                    parameter.replace(
-                        parameter.raw() - (first_hat / denominator) * learning_rate
-                    )
-                    first64[index] = first
-                    second64[index] = second

@@ -53,8 +53,10 @@ for name in (
 # Paper initialization paths.
 for needle in (
     "tensor<float32> | error normal_weights(",
-    "math.sqrt(-2.0 * math.log(radius_uniform))",
-    "math.cos(2.0 * math.pi * angle_uniform)",
+    "float log_radius = try math.log(radius_uniform)",
+    "float radius = try math.sqrt(float(-2.0) * log_radius)",
+    "float(6.283185307179586476925286766559005768)",
+    "* angle_uniform",
     "FC | error normal_fc(",
     "Conv2D | error normal_conv2d(",
 ):
@@ -134,21 +136,21 @@ for name in ("model.VGGA", "model.VGGB", "model.VGGC", "model.VGGD", "model.VGGE
 block_c = class_body("model.VGGBlockC")
 for needle in (
     "normal_conv2d(",
-    "channels_in, channels_out, 3, math.sqrt(0.01)",
-    "channels_out, channels_out, 3, math.sqrt(0.01)",
-    "channels_out, channels_out, 1, math.sqrt(0.01)",
+    "channels_in, channels_out, 3, math.sqrt(float(0.01))",
+    "channels_out, channels_out, 3, math.sqrt(float(0.01))",
+    "channels_out, channels_out, 1, math.sqrt(float(0.01))",
 ):
     require(block_c, needle, "VGG configuration C block")
 
 for name in ("model.VGGBlock1", "model.VGGBlock2", "model.VGGBlock3", "model.VGGBlockC", "model.VGGBlock4"):
     body = class_body(name)
     require(body, "normal_conv2d(", f"{name} paper initialization")
-    require(body, "math.sqrt(0.01)", f"{name} paper variance")
+    require(body, "math.sqrt(float(0.01))", f"{name} paper variance")
 
 for name in ("model.VGGA", "model.VGGALRN", "model.VGGB", "model.VGGC", "model.VGGD", "model.VGGE"):
     require(
         class_body(name),
-        "weight_standard_deviation = math.sqrt(0.01)",
+        "weight_standard_deviation = math.sqrt(float(0.01))",
         f"{name} classifier paper variance",
     )
 
@@ -296,7 +298,7 @@ if "bottleneck, bottleneck, 3,\n            math.sqrt(2.0 / float(bottleneck * 9
 stem = class_body("model.ResNetStem")
 for needle in (
     "normal_conv2d(",
-    "3, 64, 7, math.sqrt(2.0 / 147.0)",
+    "3, 64, 7, math.sqrt(float(2.0 / 147.0))",
     "max_pool2d(output, 3, 2, padding = 1)",
 ):
     require(stem, needle, "ResNet stem")
@@ -310,7 +312,8 @@ for name in (
 ):
     body = class_body(name)
     require(body, "normal_conv2d(", f"{name} He initialization")
-    require(body, "math.sqrt(2.0 /", f"{name} He variance")
+    require(body, "math.sqrt(", f"{name} He variance")
+    require(body, "2.0 /", f"{name} He variance")
 
 for name, fan_in in (
     ("model.ResNet18", "512.0"),
@@ -321,7 +324,7 @@ for name, fan_in in (
 ):
     body = class_body(name)
     require(body, "normal_fc(", f"{name} final FC He initialization")
-    require(body, f"math.sqrt(2.0 / {fan_in})", f"{name} final FC He variance")
+    require(body, f"math.sqrt(float(2.0 / {fan_in}))", f"{name} final FC He variance")
 
 
 print("reference architecture source contracts: ok")

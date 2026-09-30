@@ -1,25 +1,14 @@
-# Quidra DNN package metadata - the single source of truth.
-#
-# Every value below is authored here exactly once. quidra.package is
-# generated from this file by scripts/sync_metadata.py; do not hand-edit it.
-#
-# Only the TOML subset described in scripts/toml_subset.py is accepted here,
-# because the Quidra compiler parses the same subset.
+# Quidra DNN package metadata - architecture/model layer.
 
 [package]
 name = "quidra-dnn"
 import = "dnn"
 display_name = "Quidra DNN"
-version = "0.4.0"
+version = "0.5.0"
 repository = "https://github.com/quidra-lang/dnn"
 
 [requires]
-quidra = ">=0.4.0 <0.5.0"
+quidra = ">=0.5.0 <0.6.0"
 abi = 1
-
-# Release asset filenames, keyed by the platform id used for quidra.package's
-# `asset.<platform>` keys. The download URLs are derived from [package]
-# repository and version, so a version bump rewrites them.
-[assets]
-linux-x86_64 = "dnn-nvidia-linux-x86_64.tar.xz"
-windows-x86_64 = "dnn-nvidia-windows-x86_64.zip"
+math = ">=0.5.0 <0.6.0"
+nn = ">=0.5.0 <0.6.0"

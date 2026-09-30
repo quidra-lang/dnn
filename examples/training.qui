@@ -1,41 +1,9 @@
 import dnn
+import nn
 
-class Model
-    dnn.FC hidden
-    dnn.FC output
+dnn.model.ResNet18 | error imagenet_model(int seed = 1)
+    return dnn.model.ResNet18(seed)
 
-void train()
-    Model model
-    model.hidden = dnn.FC(features_in = 2, features_out = 4)
-    model.output = dnn.FC(features_in = 4, features_out = 1, seed = 2)
-    dnn.SGD optimizer = dnn.SGD(rate = 0.1)
-
-    tensor<float32> samples = tensor.ones([1, 2])
-    tensor<float32> targets = tensor.ones([1, 1])
-
-    tensor<float32> first = dnn.mse(
-        model.output.forward(
-            dnn.relu(model.hidden.forward(samples.track()))
-        ),
-        targets
-    )
-    print(first.item())
-
-    float32 latest = first.item()
-    for iteration in range(100)
-        tensor<float32> activated = dnn.relu(
-            model.hidden.forward(samples.track())
-        )
-        tensor<float32> loss = dnn.mse(model.output.forward(activated), targets)
-
-        optimizer.zero_grad(&model)
-        loss.backward(&model)
-        optimizer.step(&model)
-
-        latest = loss.item()
-
-    print(latest)
-    print(latest < first.item())
-
-if main
-    train()
+// Training primitives live in NN; DNN contributes the architecture.
+nn.Adam | error optimizer()
+    return nn.Adam()
