@@ -16,8 +16,8 @@ class model.ImageNetFC4096
     model.ImageNetFC4096 | error construct(
         int features_in,
         int seed = 1,
-        float weight_standard_deviation = 0.01,
-        float hidden_bias = 0.0
+        real64 weight_standard_deviation = 0.01,
+        real64 hidden_bias = 0.0
     )
         fc1 = try nn.normal_fc(
             features_in, 4096, weight_standard_deviation,
@@ -34,13 +34,13 @@ class model.ImageNetFC4096
         dropout1 = try nn.Dropout(0.5, seed + 3, inverted = false)
         dropout2 = try nn.Dropout(0.5, seed + 4, inverted = false)
 
-    tensor<float32> forward(tensor<float32> value)
-        tensor<float32> output = dropout1.forward(nn.relu(fc1.forward(value)))
+    tensor<real32> forward(tensor<real32> value)
+        tensor<real32> output = dropout1.forward(nn.relu(fc1.forward(value)))
         output = dropout2.forward(nn.relu(fc2.forward(output)))
         return fc3.forward(output)
 
-    tensor<float32> infer(tensor<float32> value)
-        tensor<float32> output = dropout1.infer(nn.relu(fc1.forward(value)))
+    tensor<real32> infer(tensor<real32> value)
+        tensor<real32> output = dropout1.infer(nn.relu(fc1.forward(value)))
         output = dropout2.infer(nn.relu(fc2.forward(output)))
         return fc3.forward(output)
 
@@ -79,12 +79,12 @@ class model.AlexNet
             hidden_bias = 1.0
         )
 
-    private tensor<float32> features(tensor<float32> value)
+    private tensor<real32> features(tensor<real32> value)
         // The paper explicitly trains on 224x224 crops. A two-pixel border
         // preserves its published 55->27->13->6 spatial sequence and the
         // 6x6x256 = 9216 inputs of the first fully-connected layer.
         internal.require_imagenet_input(value, 224)
-        tensor<float32> output = nn.relu(conv1.forward(value))
+        tensor<real32> output = nn.relu(conv1.forward(value))
         output = nn.local_response_normalization(output, size = 5, alpha = 0.0001, beta = 0.75, k = 2.0)
         output = nn.max_pool2d(output, 3, 2)
         output = nn.relu(conv2.forward(output))
@@ -96,13 +96,13 @@ class model.AlexNet
         output = nn.max_pool2d(output, 3, 2)
         return output.reshape([value.shape()[0], 9216])
 
-    tensor<float32> forward(tensor<float32> value)
+    tensor<real32> forward(tensor<real32> value)
         return classifier.forward(features(value))
 
-    tensor<float32> infer(tensor<float32> value)
+    tensor<real32> infer(tensor<real32> value)
         return classifier.infer(features(value))
 
-    tensor<float32> probabilities(tensor<float32> value)
+    tensor<real32> probabilities(tensor<real32> value)
         return nn.softmax(infer(value))
 
 class model.VGGBlock1
@@ -110,12 +110,12 @@ class model.VGGBlock1
 
     model.VGGBlock1 | error construct(int channels_in, int channels_out, int seed = 1)
         conv1 = try nn.normal_conv2d(
-            channels_in, channels_out, 3, try math.sqrt(float(0.01)),
+            channels_in, channels_out, 3, try math.sqrt(real64(0.01)),
             padding = 1, seed = seed + 0
         )
 
-    tensor<float32> forward(tensor<float32> value)
-        tensor<float32> output = value
+    tensor<real32> forward(tensor<real32> value)
+        tensor<real32> output = value
         output = nn.relu(conv1.forward(output))
         return output
 
@@ -125,16 +125,16 @@ class model.VGGBlock2
 
     model.VGGBlock2 | error construct(int channels_in, int channels_out, int seed = 1)
         conv1 = try nn.normal_conv2d(
-            channels_in, channels_out, 3, try math.sqrt(float(0.01)),
+            channels_in, channels_out, 3, try math.sqrt(real64(0.01)),
             padding = 1, seed = seed + 0
         )
         conv2 = try nn.normal_conv2d(
-            channels_out, channels_out, 3, try math.sqrt(float(0.01)),
+            channels_out, channels_out, 3, try math.sqrt(real64(0.01)),
             padding = 1, seed = seed + 1
         )
 
-    tensor<float32> forward(tensor<float32> value)
-        tensor<float32> output = value
+    tensor<real32> forward(tensor<real32> value)
+        tensor<real32> output = value
         output = nn.relu(conv1.forward(output))
         output = nn.relu(conv2.forward(output))
         return output
@@ -146,20 +146,20 @@ class model.VGGBlock3
 
     model.VGGBlock3 | error construct(int channels_in, int channels_out, int seed = 1)
         conv1 = try nn.normal_conv2d(
-            channels_in, channels_out, 3, try math.sqrt(float(0.01)),
+            channels_in, channels_out, 3, try math.sqrt(real64(0.01)),
             padding = 1, seed = seed + 0
         )
         conv2 = try nn.normal_conv2d(
-            channels_out, channels_out, 3, try math.sqrt(float(0.01)),
+            channels_out, channels_out, 3, try math.sqrt(real64(0.01)),
             padding = 1, seed = seed + 1
         )
         conv3 = try nn.normal_conv2d(
-            channels_out, channels_out, 3, try math.sqrt(float(0.01)),
+            channels_out, channels_out, 3, try math.sqrt(real64(0.01)),
             padding = 1, seed = seed + 2
         )
 
-    tensor<float32> forward(tensor<float32> value)
-        tensor<float32> output = value
+    tensor<real32> forward(tensor<real32> value)
+        tensor<real32> output = value
         output = nn.relu(conv1.forward(output))
         output = nn.relu(conv2.forward(output))
         output = nn.relu(conv3.forward(output))
@@ -172,20 +172,20 @@ class model.VGGBlockC
 
     model.VGGBlockC | error construct(int channels_in, int channels_out, int seed = 1)
         conv1 = try nn.normal_conv2d(
-            channels_in, channels_out, 3, try math.sqrt(float(0.01)),
+            channels_in, channels_out, 3, try math.sqrt(real64(0.01)),
             padding = 1, seed = seed + 0
         )
         conv2 = try nn.normal_conv2d(
-            channels_out, channels_out, 3, try math.sqrt(float(0.01)),
+            channels_out, channels_out, 3, try math.sqrt(real64(0.01)),
             padding = 1, seed = seed + 1
         )
         conv3 = try nn.normal_conv2d(
-            channels_out, channels_out, 1, try math.sqrt(float(0.01)),
+            channels_out, channels_out, 1, try math.sqrt(real64(0.01)),
             seed = seed + 2
         )
 
-    tensor<float32> forward(tensor<float32> value)
-        tensor<float32> output = value
+    tensor<real32> forward(tensor<real32> value)
+        tensor<real32> output = value
         output = nn.relu(conv1.forward(output))
         output = nn.relu(conv2.forward(output))
         output = nn.relu(conv3.forward(output))
@@ -199,24 +199,24 @@ class model.VGGBlock4
 
     model.VGGBlock4 | error construct(int channels_in, int channels_out, int seed = 1)
         conv1 = try nn.normal_conv2d(
-            channels_in, channels_out, 3, try math.sqrt(float(0.01)),
+            channels_in, channels_out, 3, try math.sqrt(real64(0.01)),
             padding = 1, seed = seed + 0
         )
         conv2 = try nn.normal_conv2d(
-            channels_out, channels_out, 3, try math.sqrt(float(0.01)),
+            channels_out, channels_out, 3, try math.sqrt(real64(0.01)),
             padding = 1, seed = seed + 1
         )
         conv3 = try nn.normal_conv2d(
-            channels_out, channels_out, 3, try math.sqrt(float(0.01)),
+            channels_out, channels_out, 3, try math.sqrt(real64(0.01)),
             padding = 1, seed = seed + 2
         )
         conv4 = try nn.normal_conv2d(
-            channels_out, channels_out, 3, try math.sqrt(float(0.01)),
+            channels_out, channels_out, 3, try math.sqrt(real64(0.01)),
             padding = 1, seed = seed + 3
         )
 
-    tensor<float32> forward(tensor<float32> value)
-        tensor<float32> output = value
+    tensor<real32> forward(tensor<real32> value)
+        tensor<real32> output = value
         output = nn.relu(conv1.forward(output))
         output = nn.relu(conv2.forward(output))
         output = nn.relu(conv3.forward(output))
@@ -239,13 +239,13 @@ class model.VGGA
         block5 = try model.VGGBlock2(512, 512, seed + 6)
         classifier = try model.ImageNetFC4096(
             25088, seed + 8,
-            weight_standard_deviation = try math.sqrt(float(0.01)),
+            weight_standard_deviation = try math.sqrt(real64(0.01)),
             hidden_bias = 0.0
         )
 
-    private tensor<float32> features(tensor<float32> value)
+    private tensor<real32> features(tensor<real32> value)
         internal.require_imagenet_input(value, 224)
-        tensor<float32> output = block1.forward(value)
+        tensor<real32> output = block1.forward(value)
         output = nn.max_pool2d(output, 2, 2)
         output = block2.forward(output)
         output = nn.max_pool2d(output, 2, 2)
@@ -257,13 +257,13 @@ class model.VGGA
         output = nn.max_pool2d(output, 2, 2)
         return output.reshape([value.shape()[0], 25088])
 
-    tensor<float32> forward(tensor<float32> value)
+    tensor<real32> forward(tensor<real32> value)
         return classifier.forward(features(value))
 
-    tensor<float32> infer(tensor<float32> value)
+    tensor<real32> infer(tensor<real32> value)
         return classifier.infer(features(value))
 
-    tensor<float32> probabilities(tensor<float32> value)
+    tensor<real32> probabilities(tensor<real32> value)
         return nn.softmax(infer(value))
 
 class model.VGGALRN
@@ -282,13 +282,13 @@ class model.VGGALRN
         block5 = try model.VGGBlock2(512, 512, seed + 6)
         classifier = try model.ImageNetFC4096(
             25088, seed + 8,
-            weight_standard_deviation = try math.sqrt(float(0.01)),
+            weight_standard_deviation = try math.sqrt(real64(0.01)),
             hidden_bias = 0.0
         )
 
-    private tensor<float32> features(tensor<float32> value)
+    private tensor<real32> features(tensor<real32> value)
         internal.require_imagenet_input(value, 224)
-        tensor<float32> output = block1.forward(value)
+        tensor<real32> output = block1.forward(value)
         output = nn.local_response_normalization(output, size = 5, alpha = 0.0001, beta = 0.75, k = 2.0)
         output = nn.max_pool2d(output, 2, 2)
         output = block2.forward(output)
@@ -301,13 +301,13 @@ class model.VGGALRN
         output = nn.max_pool2d(output, 2, 2)
         return output.reshape([value.shape()[0], 25088])
 
-    tensor<float32> forward(tensor<float32> value)
+    tensor<real32> forward(tensor<real32> value)
         return classifier.forward(features(value))
 
-    tensor<float32> infer(tensor<float32> value)
+    tensor<real32> infer(tensor<real32> value)
         return classifier.infer(features(value))
 
-    tensor<float32> probabilities(tensor<float32> value)
+    tensor<real32> probabilities(tensor<real32> value)
         return nn.softmax(infer(value))
 
 class model.VGGB
@@ -326,7 +326,7 @@ class model.VGGB
         block5 = try model.VGGBlock2(512, 512, seed + 8)
         classifier = try model.ImageNetFC4096(
             25088, seed + 10,
-            weight_standard_deviation = try math.sqrt(float(0.01)),
+            weight_standard_deviation = try math.sqrt(real64(0.01)),
             hidden_bias = 0.0
         )
 
@@ -349,9 +349,9 @@ class model.VGGB
         classifier.fc3.weight.replace(source.classifier.fc3.weight.raw())
         classifier.fc3.bias.replace(source.classifier.fc3.bias.raw())
 
-    private tensor<float32> features(tensor<float32> value)
+    private tensor<real32> features(tensor<real32> value)
         internal.require_imagenet_input(value, 224)
-        tensor<float32> output = block1.forward(value)
+        tensor<real32> output = block1.forward(value)
         output = nn.max_pool2d(output, 2, 2)
         output = block2.forward(output)
         output = nn.max_pool2d(output, 2, 2)
@@ -363,13 +363,13 @@ class model.VGGB
         output = nn.max_pool2d(output, 2, 2)
         return output.reshape([value.shape()[0], 25088])
 
-    tensor<float32> forward(tensor<float32> value)
+    tensor<real32> forward(tensor<real32> value)
         return classifier.forward(features(value))
 
-    tensor<float32> infer(tensor<float32> value)
+    tensor<real32> infer(tensor<real32> value)
         return classifier.infer(features(value))
 
-    tensor<float32> probabilities(tensor<float32> value)
+    tensor<real32> probabilities(tensor<real32> value)
         return nn.softmax(infer(value))
 
 class model.VGGC
@@ -388,7 +388,7 @@ class model.VGGC
         block5 = try model.VGGBlockC(512, 512, seed + 10)
         classifier = try model.ImageNetFC4096(
             25088, seed + 13,
-            weight_standard_deviation = try math.sqrt(float(0.01)),
+            weight_standard_deviation = try math.sqrt(real64(0.01)),
             hidden_bias = 0.0
         )
 
@@ -411,9 +411,9 @@ class model.VGGC
         classifier.fc3.weight.replace(source.classifier.fc3.weight.raw())
         classifier.fc3.bias.replace(source.classifier.fc3.bias.raw())
 
-    private tensor<float32> features(tensor<float32> value)
+    private tensor<real32> features(tensor<real32> value)
         internal.require_imagenet_input(value, 224)
-        tensor<float32> output = block1.forward(value)
+        tensor<real32> output = block1.forward(value)
         output = nn.max_pool2d(output, 2, 2)
         output = block2.forward(output)
         output = nn.max_pool2d(output, 2, 2)
@@ -425,13 +425,13 @@ class model.VGGC
         output = nn.max_pool2d(output, 2, 2)
         return output.reshape([value.shape()[0], 25088])
 
-    tensor<float32> forward(tensor<float32> value)
+    tensor<real32> forward(tensor<real32> value)
         return classifier.forward(features(value))
 
-    tensor<float32> infer(tensor<float32> value)
+    tensor<real32> infer(tensor<real32> value)
         return classifier.infer(features(value))
 
-    tensor<float32> probabilities(tensor<float32> value)
+    tensor<real32> probabilities(tensor<real32> value)
         return nn.softmax(infer(value))
 
 class model.VGGD
@@ -450,7 +450,7 @@ class model.VGGD
         block5 = try model.VGGBlock3(512, 512, seed + 10)
         classifier = try model.ImageNetFC4096(
             25088, seed + 13,
-            weight_standard_deviation = try math.sqrt(float(0.01)),
+            weight_standard_deviation = try math.sqrt(real64(0.01)),
             hidden_bias = 0.0
         )
 
@@ -473,9 +473,9 @@ class model.VGGD
         classifier.fc3.weight.replace(source.classifier.fc3.weight.raw())
         classifier.fc3.bias.replace(source.classifier.fc3.bias.raw())
 
-    private tensor<float32> features(tensor<float32> value)
+    private tensor<real32> features(tensor<real32> value)
         internal.require_imagenet_input(value, 224)
-        tensor<float32> output = block1.forward(value)
+        tensor<real32> output = block1.forward(value)
         output = nn.max_pool2d(output, 2, 2)
         output = block2.forward(output)
         output = nn.max_pool2d(output, 2, 2)
@@ -487,13 +487,13 @@ class model.VGGD
         output = nn.max_pool2d(output, 2, 2)
         return output.reshape([value.shape()[0], 25088])
 
-    tensor<float32> forward(tensor<float32> value)
+    tensor<real32> forward(tensor<real32> value)
         return classifier.forward(features(value))
 
-    tensor<float32> infer(tensor<float32> value)
+    tensor<real32> infer(tensor<real32> value)
         return classifier.infer(features(value))
 
-    tensor<float32> probabilities(tensor<float32> value)
+    tensor<real32> probabilities(tensor<real32> value)
         return nn.softmax(infer(value))
 
 class model.VGGE
@@ -512,7 +512,7 @@ class model.VGGE
         block5 = try model.VGGBlock4(512, 512, seed + 12)
         classifier = try model.ImageNetFC4096(
             25088, seed + 16,
-            weight_standard_deviation = try math.sqrt(float(0.01)),
+            weight_standard_deviation = try math.sqrt(real64(0.01)),
             hidden_bias = 0.0
         )
 
@@ -535,9 +535,9 @@ class model.VGGE
         classifier.fc3.weight.replace(source.classifier.fc3.weight.raw())
         classifier.fc3.bias.replace(source.classifier.fc3.bias.raw())
 
-    private tensor<float32> features(tensor<float32> value)
+    private tensor<real32> features(tensor<real32> value)
         internal.require_imagenet_input(value, 224)
-        tensor<float32> output = block1.forward(value)
+        tensor<real32> output = block1.forward(value)
         output = nn.max_pool2d(output, 2, 2)
         output = block2.forward(output)
         output = nn.max_pool2d(output, 2, 2)
@@ -549,13 +549,13 @@ class model.VGGE
         output = nn.max_pool2d(output, 2, 2)
         return output.reshape([value.shape()[0], 25088])
 
-    tensor<float32> forward(tensor<float32> value)
+    tensor<real32> forward(tensor<real32> value)
         return classifier.forward(features(value))
 
-    tensor<float32> infer(tensor<float32> value)
+    tensor<real32> infer(tensor<real32> value)
         return classifier.infer(features(value))
 
-    tensor<float32> probabilities(tensor<float32> value)
+    tensor<real32> probabilities(tensor<real32> value)
         return nn.softmax(infer(value))
 
 class model.VGG11
@@ -564,13 +564,13 @@ class model.VGG11
     model.VGG11 | error construct(int seed = 1)
         network = try model.VGGA(seed)
 
-    tensor<float32> forward(tensor<float32> value)
+    tensor<real32> forward(tensor<real32> value)
         return network.forward(value)
 
-    tensor<float32> infer(tensor<float32> value)
+    tensor<real32> infer(tensor<real32> value)
         return network.infer(value)
 
-    tensor<float32> probabilities(tensor<float32> value)
+    tensor<real32> probabilities(tensor<real32> value)
         return network.probabilities(value)
 
 class model.VGG13
@@ -582,13 +582,13 @@ class model.VGG13
     void initialize_from(model.VGG11 source)
         network.initialize_from(source.network)
 
-    tensor<float32> forward(tensor<float32> value)
+    tensor<real32> forward(tensor<real32> value)
         return network.forward(value)
 
-    tensor<float32> infer(tensor<float32> value)
+    tensor<real32> infer(tensor<real32> value)
         return network.infer(value)
 
-    tensor<float32> probabilities(tensor<float32> value)
+    tensor<real32> probabilities(tensor<real32> value)
         return network.probabilities(value)
 
 class model.VGG16
@@ -600,13 +600,13 @@ class model.VGG16
     void initialize_from(model.VGG11 source)
         network.initialize_from(source.network)
 
-    tensor<float32> forward(tensor<float32> value)
+    tensor<real32> forward(tensor<real32> value)
         return network.forward(value)
 
-    tensor<float32> infer(tensor<float32> value)
+    tensor<real32> infer(tensor<real32> value)
         return network.infer(value)
 
-    tensor<float32> probabilities(tensor<float32> value)
+    tensor<real32> probabilities(tensor<real32> value)
         return network.probabilities(value)
 
 class model.VGG19
@@ -618,13 +618,13 @@ class model.VGG19
     void initialize_from(model.VGG11 source)
         network.initialize_from(source.network)
 
-    tensor<float32> forward(tensor<float32> value)
+    tensor<real32> forward(tensor<real32> value)
         return network.forward(value)
 
-    tensor<float32> infer(tensor<float32> value)
+    tensor<real32> infer(tensor<real32> value)
         return network.infer(value)
 
-    tensor<float32> probabilities(tensor<float32> value)
+    tensor<real32> probabilities(tensor<real32> value)
         return network.probabilities(value)
 
 
@@ -634,17 +634,17 @@ class model.ResNetStem
 
     model.ResNetStem | error construct(int seed = 1)
         conv = try nn.normal_conv2d(
-            3, 64, 7, try math.sqrt(float(2.0 / 147.0)),
+            3, 64, 7, try math.sqrt(real64(2.0 / 147.0)),
             stride = 2, padding = 3, seed = seed
         )
         norm = try nn.BatchNorm(64)
 
-    tensor<float32> forward(tensor<float32> value)
-        tensor<float32> output = nn.relu(norm.forward(conv.forward(value)))
+    tensor<real32> forward(tensor<real32> value)
+        tensor<real32> output = nn.relu(norm.forward(conv.forward(value)))
         return nn.max_pool2d(output, 3, 2, padding = 1)
 
-    tensor<float32> infer(tensor<float32> value)
-        tensor<float32> output = nn.relu(norm.infer(conv.forward(value)))
+    tensor<real32> infer(tensor<real32> value)
+        tensor<real32> output = nn.relu(norm.infer(conv.forward(value)))
         return nn.max_pool2d(output, 3, 2, padding = 1)
 
 class model.ResNetBasicBlock
@@ -656,24 +656,24 @@ class model.ResNetBasicBlock
     model.ResNetBasicBlock | error construct(int channels, int seed = 1)
         conv1 = try nn.normal_conv2d(
             channels, channels, 3,
-            try math.sqrt(2.0 / float(channels * 9)),
+            try math.sqrt(2.0 / real64(channels * 9)),
             padding = 1, seed = seed
         )
         norm1 = try nn.BatchNorm(channels)
         conv2 = try nn.normal_conv2d(
             channels, channels, 3,
-            try math.sqrt(2.0 / float(channels * 9)),
+            try math.sqrt(2.0 / real64(channels * 9)),
             padding = 1, seed = seed + 1
         )
         norm2 = try nn.BatchNorm(channels)
 
-    tensor<float32> forward(tensor<float32> value)
-        tensor<float32> residual = nn.relu(norm1.forward(conv1.forward(value)))
+    tensor<real32> forward(tensor<real32> value)
+        tensor<real32> residual = nn.relu(norm1.forward(conv1.forward(value)))
         residual = norm2.forward(conv2.forward(residual))
         return nn.relu(residual + value)
 
-    tensor<float32> infer(tensor<float32> value)
-        tensor<float32> residual = nn.relu(norm1.infer(conv1.forward(value)))
+    tensor<real32> infer(tensor<real32> value)
+        tensor<real32> residual = nn.relu(norm1.infer(conv1.forward(value)))
         residual = norm2.infer(conv2.forward(residual))
         return nn.relu(residual + value)
 
@@ -692,31 +692,31 @@ class model.ResNetBottleneckBlock
     )
         conv1 = try nn.normal_conv2d(
             channels, bottleneck, 1,
-            try math.sqrt(2.0 / float(channels)),
+            try math.sqrt(2.0 / real64(channels)),
             seed = seed
         )
         norm1 = try nn.BatchNorm(bottleneck)
         conv2 = try nn.normal_conv2d(
             bottleneck, bottleneck, 3,
-            try math.sqrt(2.0 / float(bottleneck * 9)),
+            try math.sqrt(2.0 / real64(bottleneck * 9)),
             padding = 1, seed = seed + 1
         )
         norm2 = try nn.BatchNorm(bottleneck)
         conv3 = try nn.normal_conv2d(
             bottleneck, channels, 1,
-            try math.sqrt(2.0 / float(bottleneck)),
+            try math.sqrt(2.0 / real64(bottleneck)),
             seed = seed + 2
         )
         norm3 = try nn.BatchNorm(channels)
 
-    tensor<float32> forward(tensor<float32> value)
-        tensor<float32> residual = nn.relu(norm1.forward(conv1.forward(value)))
+    tensor<real32> forward(tensor<real32> value)
+        tensor<real32> residual = nn.relu(norm1.forward(conv1.forward(value)))
         residual = nn.relu(norm2.forward(conv2.forward(residual)))
         residual = norm3.forward(conv3.forward(residual))
         return nn.relu(residual + value)
 
-    tensor<float32> infer(tensor<float32> value)
-        tensor<float32> residual = nn.relu(norm1.infer(conv1.forward(value)))
+    tensor<real32> infer(tensor<real32> value)
+        tensor<real32> residual = nn.relu(norm1.infer(conv1.forward(value)))
         residual = nn.relu(norm2.infer(conv2.forward(residual)))
         residual = norm3.infer(conv3.forward(residual))
         return nn.relu(residual + value)
@@ -742,41 +742,41 @@ class model.ResNetBottleneckProjectionBlock
         // 1x1 bottleneck convolution (not the later "v1.5" 3x3 placement).
         conv1 = try nn.normal_conv2d(
             channels_in, bottleneck, 1,
-            try math.sqrt(2.0 / float(channels_in)),
+            try math.sqrt(2.0 / real64(channels_in)),
             stride = stride, seed = seed
         )
         norm1 = try nn.BatchNorm(bottleneck)
         conv2 = try nn.normal_conv2d(
             bottleneck, bottleneck, 3,
-            try math.sqrt(2.0 / float(bottleneck * 9)),
+            try math.sqrt(2.0 / real64(bottleneck * 9)),
             padding = 1, seed = seed + 1
         )
         norm2 = try nn.BatchNorm(bottleneck)
         conv3 = try nn.normal_conv2d(
             bottleneck, channels_out, 1,
-            try math.sqrt(2.0 / float(bottleneck)),
+            try math.sqrt(2.0 / real64(bottleneck)),
             seed = seed + 2
         )
         norm3 = try nn.BatchNorm(channels_out)
         shortcut = try nn.normal_conv2d(
             channels_in, channels_out, 1,
-            try math.sqrt(2.0 / float(channels_in)),
+            try math.sqrt(2.0 / real64(channels_in)),
             stride = stride, seed = seed + 3
         )
         shortcut_norm = try nn.BatchNorm(channels_out)
 
-    tensor<float32> forward(tensor<float32> value)
-        tensor<float32> residual = nn.relu(norm1.forward(conv1.forward(value)))
+    tensor<real32> forward(tensor<real32> value)
+        tensor<real32> residual = nn.relu(norm1.forward(conv1.forward(value)))
         residual = nn.relu(norm2.forward(conv2.forward(residual)))
         residual = norm3.forward(conv3.forward(residual))
-        tensor<float32> identity = shortcut_norm.forward(shortcut.forward(value))
+        tensor<real32> identity = shortcut_norm.forward(shortcut.forward(value))
         return nn.relu(residual + identity)
 
-    tensor<float32> infer(tensor<float32> value)
-        tensor<float32> residual = nn.relu(norm1.infer(conv1.forward(value)))
+    tensor<real32> infer(tensor<real32> value)
+        tensor<real32> residual = nn.relu(norm1.infer(conv1.forward(value)))
         residual = nn.relu(norm2.infer(conv2.forward(residual)))
         residual = norm3.infer(conv3.forward(residual))
-        tensor<float32> identity = shortcut_norm.infer(shortcut.forward(value))
+        tensor<real32> identity = shortcut_norm.infer(shortcut.forward(value))
         return nn.relu(residual + identity)
 
 class model.ResNetBasicIdentityStage
@@ -795,14 +795,14 @@ class model.ResNetBasicIdentityStage
                 try model.ResNetBasicBlock(channels, seed + index * 2)
             )
 
-    tensor<float32> forward(tensor<float32> value)
-        tensor<float32> output = value
+    tensor<real32> forward(tensor<real32> value)
+        tensor<real32> output = value
         for block in blocks
             output = block.forward(output)
         return output
 
-    tensor<float32> infer(tensor<float32> value)
-        tensor<float32> output = value
+    tensor<real32> infer(tensor<real32> value)
+        tensor<real32> output = value
         for block in blocks
             output = block.infer(output)
         return output
@@ -825,35 +825,35 @@ class model.ResNetBasicOptionABlock
     )
         conv1 = try nn.normal_conv2d(
             channels_in, channels_out, 3,
-            try math.sqrt(2.0 / float(channels_in * 9)),
+            try math.sqrt(2.0 / real64(channels_in * 9)),
             stride = stride, padding = 1, seed = seed
         )
         norm1 = try nn.BatchNorm(channels_out)
         conv2 = try nn.normal_conv2d(
             channels_out, channels_out, 3,
-            try math.sqrt(2.0 / float(channels_out * 9)),
+            try math.sqrt(2.0 / real64(channels_out * 9)),
             padding = 1, seed = seed + 1
         )
         norm2 = try nn.BatchNorm(channels_out)
         output_channels = channels_out
         shortcut_stride = stride
 
-    tensor<float32> forward(tensor<float32> value)
-        tensor<float32> residual = nn.relu(
+    tensor<real32> forward(tensor<real32> value)
+        tensor<real32> residual = nn.relu(
             norm1.forward(conv1.forward(value))
         )
         residual = norm2.forward(conv2.forward(residual))
-        tensor<float32> identity = internal.resnet_option_a_shortcut(
+        tensor<real32> identity = internal.resnet_option_a_shortcut(
             value, output_channels, shortcut_stride
         )
         return nn.relu(residual + identity)
 
-    tensor<float32> infer(tensor<float32> value)
-        tensor<float32> residual = nn.relu(
+    tensor<real32> infer(tensor<real32> value)
+        tensor<real32> residual = nn.relu(
             norm1.infer(conv1.forward(value))
         )
         residual = norm2.infer(conv2.forward(residual))
-        tensor<float32> identity = internal.resnet_option_a_shortcut(
+        tensor<real32> identity = internal.resnet_option_a_shortcut(
             value, output_channels, shortcut_stride
         )
         return nn.relu(residual + identity)
@@ -881,14 +881,14 @@ class model.ResNetBasicOptionAStage
                 )
             )
 
-    tensor<float32> forward(tensor<float32> value)
-        tensor<float32> output = first.forward(value)
+    tensor<real32> forward(tensor<real32> value)
+        tensor<real32> output = first.forward(value)
         for block in blocks
             output = block.forward(output)
         return output
 
-    tensor<float32> infer(tensor<float32> value)
-        tensor<float32> output = first.infer(value)
+    tensor<real32> infer(tensor<real32> value)
+        tensor<real32> output = first.infer(value)
         for block in blocks
             output = block.infer(output)
         return output
@@ -918,14 +918,14 @@ class model.ResNetBottleneckStage
                 )
             )
 
-    tensor<float32> forward(tensor<float32> value)
-        tensor<float32> output = first.forward(value)
+    tensor<real32> forward(tensor<real32> value)
+        tensor<real32> output = first.forward(value)
         for block in blocks
             output = block.forward(output)
         return output
 
-    tensor<float32> infer(tensor<float32> value)
-        tensor<float32> output = first.infer(value)
+    tensor<real32> infer(tensor<real32> value)
+        tensor<real32> output = first.infer(value)
         for block in blocks
             output = block.infer(output)
         return output
@@ -945,29 +945,29 @@ class model.ResNet18
         conv4_x = try model.ResNetBasicOptionAStage(128, 256, 2, seed + 60)
         conv5_x = try model.ResNetBasicOptionAStage(256, 512, 2, seed + 100)
         fc = try nn.normal_fc(
-            512, 1000, try math.sqrt(float(2.0 / 512.0)),
+            512, 1000, try math.sqrt(real64(2.0 / 512.0)),
             seed = seed + 140
         )
 
-    tensor<float32> forward(tensor<float32> value)
+    tensor<real32> forward(tensor<real32> value)
         internal.require_imagenet_input(value, 224)
-        tensor<float32> output = stem.forward(value)
+        tensor<real32> output = stem.forward(value)
         output = conv2_x.forward(output)
         output = conv3_x.forward(output)
         output = conv4_x.forward(output)
         output = conv5_x.forward(output)
         return fc.forward(nn.global_average_pool2d(output))
 
-    tensor<float32> infer(tensor<float32> value)
+    tensor<real32> infer(tensor<real32> value)
         internal.require_imagenet_input(value, 224)
-        tensor<float32> output = stem.infer(value)
+        tensor<real32> output = stem.infer(value)
         output = conv2_x.infer(output)
         output = conv3_x.infer(output)
         output = conv4_x.infer(output)
         output = conv5_x.infer(output)
         return fc.forward(nn.global_average_pool2d(output))
 
-    tensor<float32> probabilities(tensor<float32> value)
+    tensor<real32> probabilities(tensor<real32> value)
         return nn.softmax(infer(value))
 
 class model.ResNet34
@@ -985,29 +985,29 @@ class model.ResNet34
         conv4_x = try model.ResNetBasicOptionAStage(128, 256, 6, seed + 60)
         conv5_x = try model.ResNetBasicOptionAStage(256, 512, 3, seed + 100)
         fc = try nn.normal_fc(
-            512, 1000, try math.sqrt(float(2.0 / 512.0)),
+            512, 1000, try math.sqrt(real64(2.0 / 512.0)),
             seed = seed + 140
         )
 
-    tensor<float32> forward(tensor<float32> value)
+    tensor<real32> forward(tensor<real32> value)
         internal.require_imagenet_input(value, 224)
-        tensor<float32> output = stem.forward(value)
+        tensor<real32> output = stem.forward(value)
         output = conv2_x.forward(output)
         output = conv3_x.forward(output)
         output = conv4_x.forward(output)
         output = conv5_x.forward(output)
         return fc.forward(nn.global_average_pool2d(output))
 
-    tensor<float32> infer(tensor<float32> value)
+    tensor<real32> infer(tensor<real32> value)
         internal.require_imagenet_input(value, 224)
-        tensor<float32> output = stem.infer(value)
+        tensor<real32> output = stem.infer(value)
         output = conv2_x.infer(output)
         output = conv3_x.infer(output)
         output = conv4_x.infer(output)
         output = conv5_x.infer(output)
         return fc.forward(nn.global_average_pool2d(output))
 
-    tensor<float32> probabilities(tensor<float32> value)
+    tensor<real32> probabilities(tensor<real32> value)
         return nn.softmax(infer(value))
 
 class model.ResNet50
@@ -1025,29 +1025,29 @@ class model.ResNet50
         conv4_x = try model.ResNetBottleneckStage(512, 256, 1024, 6, 2, seed + 70)
         conv5_x = try model.ResNetBottleneckStage(1024, 512, 2048, 3, 2, seed + 190)
         fc = try nn.normal_fc(
-            2048, 1000, try math.sqrt(float(2.0 / 2048.0)),
+            2048, 1000, try math.sqrt(real64(2.0 / 2048.0)),
             seed = seed + 220
         )
 
-    tensor<float32> forward(tensor<float32> value)
+    tensor<real32> forward(tensor<real32> value)
         internal.require_imagenet_input(value, 224)
-        tensor<float32> output = stem.forward(value)
+        tensor<real32> output = stem.forward(value)
         output = conv2_x.forward(output)
         output = conv3_x.forward(output)
         output = conv4_x.forward(output)
         output = conv5_x.forward(output)
         return fc.forward(nn.global_average_pool2d(output))
 
-    tensor<float32> infer(tensor<float32> value)
+    tensor<real32> infer(tensor<real32> value)
         internal.require_imagenet_input(value, 224)
-        tensor<float32> output = stem.infer(value)
+        tensor<real32> output = stem.infer(value)
         output = conv2_x.infer(output)
         output = conv3_x.infer(output)
         output = conv4_x.infer(output)
         output = conv5_x.infer(output)
         return fc.forward(nn.global_average_pool2d(output))
 
-    tensor<float32> probabilities(tensor<float32> value)
+    tensor<real32> probabilities(tensor<real32> value)
         return nn.softmax(infer(value))
 
 class model.ResNet101
@@ -1065,29 +1065,29 @@ class model.ResNet101
         conv4_x = try model.ResNetBottleneckStage(512, 256, 1024, 23, 2, seed + 70)
         conv5_x = try model.ResNetBottleneckStage(1024, 512, 2048, 3, 2, seed + 190)
         fc = try nn.normal_fc(
-            2048, 1000, try math.sqrt(float(2.0 / 2048.0)),
+            2048, 1000, try math.sqrt(real64(2.0 / 2048.0)),
             seed = seed + 220
         )
 
-    tensor<float32> forward(tensor<float32> value)
+    tensor<real32> forward(tensor<real32> value)
         internal.require_imagenet_input(value, 224)
-        tensor<float32> output = stem.forward(value)
+        tensor<real32> output = stem.forward(value)
         output = conv2_x.forward(output)
         output = conv3_x.forward(output)
         output = conv4_x.forward(output)
         output = conv5_x.forward(output)
         return fc.forward(nn.global_average_pool2d(output))
 
-    tensor<float32> infer(tensor<float32> value)
+    tensor<real32> infer(tensor<real32> value)
         internal.require_imagenet_input(value, 224)
-        tensor<float32> output = stem.infer(value)
+        tensor<real32> output = stem.infer(value)
         output = conv2_x.infer(output)
         output = conv3_x.infer(output)
         output = conv4_x.infer(output)
         output = conv5_x.infer(output)
         return fc.forward(nn.global_average_pool2d(output))
 
-    tensor<float32> probabilities(tensor<float32> value)
+    tensor<real32> probabilities(tensor<real32> value)
         return nn.softmax(infer(value))
 
 class model.ResNet152
@@ -1105,29 +1105,29 @@ class model.ResNet152
         conv4_x = try model.ResNetBottleneckStage(512, 256, 1024, 36, 2, seed + 70)
         conv5_x = try model.ResNetBottleneckStage(1024, 512, 2048, 3, 2, seed + 190)
         fc = try nn.normal_fc(
-            2048, 1000, try math.sqrt(float(2.0 / 2048.0)),
+            2048, 1000, try math.sqrt(real64(2.0 / 2048.0)),
             seed = seed + 220
         )
 
-    tensor<float32> forward(tensor<float32> value)
+    tensor<real32> forward(tensor<real32> value)
         internal.require_imagenet_input(value, 224)
-        tensor<float32> output = stem.forward(value)
+        tensor<real32> output = stem.forward(value)
         output = conv2_x.forward(output)
         output = conv3_x.forward(output)
         output = conv4_x.forward(output)
         output = conv5_x.forward(output)
         return fc.forward(nn.global_average_pool2d(output))
 
-    tensor<float32> infer(tensor<float32> value)
+    tensor<real32> infer(tensor<real32> value)
         internal.require_imagenet_input(value, 224)
-        tensor<float32> output = stem.infer(value)
+        tensor<real32> output = stem.infer(value)
         output = conv2_x.infer(output)
         output = conv3_x.infer(output)
         output = conv4_x.infer(output)
         output = conv5_x.infer(output)
         return fc.forward(nn.global_average_pool2d(output))
 
-    tensor<float32> probabilities(tensor<float32> value)
+    tensor<real32> probabilities(tensor<real32> value)
         return nn.softmax(infer(value))
 
 

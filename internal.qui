@@ -1,7 +1,7 @@
 // Private DNN model/architecture helpers. Generic NN helpers live in the NN package.
 
-void require_imagenet_input(tensor<float32> value, int spatial)
-    int[] shape = value.shape()
+void require_imagenet_input(tensor<real32> value, int spatial)
+    int[] shape = int(value.shape())
     if len(shape) != 4
         error("ImageNet reference models require NCHW rank-4 input")
     if shape[0] <= 0 or shape[1] != 3
@@ -9,12 +9,12 @@ void require_imagenet_input(tensor<float32> value, int spatial)
     if shape[2] != spatial or shape[3] != spatial
         error("ImageNet reference model input spatial size does not match the original architecture")
 
-tensor<float32> resnet_option_a_shortcut(
-    tensor<float32> value,
+tensor<real32> resnet_option_a_shortcut(
+    tensor<real32> value,
     int channels_out,
     int stride
 )
-    int[] shape = value.shape()
+    int[] shape = int(value.shape())
     if len(shape) != 4
         error("ResNet option-A shortcut requires NCHW rank-4 input")
     if stride != 1 and stride != 2
@@ -28,8 +28,8 @@ tensor<float32> resnet_option_a_shortcut(
     int output_height = (height - 1) / stride + 1
     int output_width = (width - 1) / stride + 1
     int count = batches * channels_in * output_height * output_width
-    int[] source_indices = array(count, fill = 0)
-    int[] destination_indices = array(count, fill = 0)
+    int[] source_indices = array(nat(count), fill = 0)
+    int[] destination_indices = array(nat(count), fill = 0)
     for flat_index in range(count)
         int output_x = flat_index % output_width
         int remaining = flat_index / output_width
@@ -47,11 +47,11 @@ tensor<float32> resnet_option_a_shortcut(
             ((batch * channels_out + channel) * output_height + output_y)
             * output_width + output_x
         )
-    tensor<float32> sampled = value.gather(
+    tensor<real32> sampled = value.gather(
         source_indices,
-        [batches, channels_in, output_height, output_width]
+        [nat(batches), nat(channels_in), nat(output_height), nat(output_width)]
     )
     return sampled.scatter(
         destination_indices,
-        [batches, channels_out, output_height, output_width]
+        [nat(batches), nat(channels_out), nat(output_height), nat(output_width)]
     )
