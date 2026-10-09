@@ -46,8 +46,7 @@ fi
 cat > "$TMP/architecture-error.qui" <<'QUI'
 import dnn
 
-dnn.model.ResNetBasicIdentityStage | error stage =
-    dnn.model.ResNetBasicIdentityStage(channels = 4, count = 0)
+dnn.model.ResNetBasicIdentityStage | error stage = dnn.model.ResNetBasicIdentityStage(channels = 4, count = 0)
 match stage
     dnn.model.ResNetBasicIdentityStage
         print(false)
