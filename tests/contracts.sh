@@ -42,4 +42,23 @@ if [[ "$status" -eq 0 ]]; then
     exit 1
 fi
 
+# A DNN architecture guard returns a structured package error with its code.
+cat > "$TMP/architecture-error.qui" <<'QUI'
+import dnn
+
+dnn.model.ResNetBasicIdentityStage | error stage =
+    dnn.model.ResNetBasicIdentityStage(channels = 4, count = 0)
+match stage
+    dnn.model.ResNetBasicIdentityStage
+        print(false)
+    error problem
+        print(problem.code == "DNN_ARGUMENT")
+print(NL)
+QUI
+code_output="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/architecture-error.qui")"
+if [[ "$code_output" != "true" ]]; then
+    printf 'DNN architecture error code mismatch: %s\n' "$code_output" >&2
+    exit 1
+fi
+
 echo "dnn contracts: ok"
