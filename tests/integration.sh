@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PACKAGE_ROOT="$(dirname "$ROOT")"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+export QUIDRA_CACHE_DIR="$TMP/run-cache"
 
 cat > "$TMP/model.qui" <<'QUI'
 import dnn
