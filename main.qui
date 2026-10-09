@@ -788,7 +788,7 @@ class model.ResNetBasicIdentityStage
         int seed = 1
     )
         if count <= 0
-            return error("ResNet basic identity stage requires a positive block count")
+            return error("ResNet basic identity stage requires a positive block count", code = "DNN_ARGUMENT")
         blocks = []
         for index in range(count)
             blocks = blocks.append(
@@ -869,7 +869,7 @@ class model.ResNetBasicOptionAStage
         int seed = 1
     )
         if count <= 0
-            return error("ResNet basic option-A stage requires a positive block count")
+            return error("ResNet basic option-A stage requires a positive block count", code = "DNN_ARGUMENT")
         first = try model.ResNetBasicOptionABlock(
             channels_in, channels_out, 2, seed
         )
@@ -906,7 +906,7 @@ class model.ResNetBottleneckStage
         int seed = 1
     )
         if count <= 0
-            return error("ResNet bottleneck stage requires a positive block count")
+            return error("ResNet bottleneck stage requires a positive block count", code = "DNN_ARGUMENT")
         first = try model.ResNetBottleneckProjectionBlock(
             channels_in, bottleneck, channels_out, stride, seed
         )

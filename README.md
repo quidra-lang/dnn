@@ -17,6 +17,11 @@ does not require Vision or Video.
 
 DNN owns deep-network/model architecture semantics. Reusable neural-network building blocks are not implemented here: `Parameter`, `State`, `FC`, `Conv2D`, `BatchNorm`, `Dropout`, activations, losses, optimizers, persistence, collectives, cuDNN/NCCL integration, and NN compiler fusion live in the first-party `nn` package.
 
+DNN errors carry a stable code while preserving their operation-specific
+messages: `DNN_ARGUMENT` covers invalid architecture options (such as a
+nonpositive block count or unsupported shortcut stride), and `DNN_SHAPE`
+covers incompatible input ranks, channels and spatial dimensions.
+
 DNN currently provides paper-oriented ImageNet architecture families under `dnn.model`:
 
 - `dnn.model.AlexNet`
