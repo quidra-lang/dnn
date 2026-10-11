@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PACKAGE_ROOT="$(dirname "$ROOT")"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+export QUIDRA_CACHE_DIR="$TMP/run-cache"
 
 cat > "$TMP/reference-models.qui" <<'QUI'
 import dnn
@@ -40,5 +41,52 @@ if [[ "$status" -eq 0 ]]; then
     echo "DNN model namespace leaked into package root" >&2
     exit 1
 fi
+
+# A DNN architecture guard returns a structured package error with its code.
+cat > "$TMP/architecture-error.qui" <<'QUI'
+import dnn
+
+dnn.model.ResNetBasicIdentityStage | error stage = dnn.model.ResNetBasicIdentityStage(channels = 4, count = 0)
+match stage
+    dnn.model.ResNetBasicIdentityStage
+        print(false)
+    error problem
+        print(problem.code == "DNN_ARGUMENT")
+print(NL)
+QUI
+code_output="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/architecture-error.qui")"
+if [[ "$code_output" != "true" ]]; then
+    printf 'DNN architecture error code mismatch: %s\n' "$code_output" >&2
+    exit 1
+fi
+
+# The public option-A block reaches its own channel-shape guard after
+# two small, valid convolutions. It must fail with DNN's production code.
+cat > "$TMP/option-a-shape-error.qui" <<'QUI'
+import dnn
+
+int | error exercise_shape_guard()
+    dnn.model.ResNetBasicOptionABlock block = try dnn.model.ResNetBasicOptionABlock(
+        channels_in = 2, channels_out = 1, stride = 1, seed = 1
+    )
+    tensor<real32> input = tensor.zeros<real32>([1, 2, 1, 1])
+    tensor<real32> output = .block.infer(input)
+    return 0
+
+auto result = exercise_shape_guard()
+print(result)
+print(NL)
+QUI
+set +e
+QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/option-a-shape-error.qui" >"$TMP/option-a-shape-error.out" 2>"$TMP/option-a-shape-error.err"
+shape_status=$?
+set -e
+if [[ "$shape_status" -ne 101 ]]; then
+    printf 'DNN shape failure status mismatch: %s\n' "$shape_status" >&2
+    cat "$TMP/option-a-shape-error.out" "$TMP/option-a-shape-error.err" >&2
+    exit 1
+fi
+grep -F 'Quidra runtime error[DNN_SHAPE]' "$TMP/option-a-shape-error.err"
+grep -F 'ResNet option-A shortcut cannot reduce channel count' "$TMP/option-a-shape-error.err"
 
 echo "dnn contracts: ok"

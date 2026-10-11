@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PACKAGE_ROOT="$(dirname "$ROOT")"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+export QUIDRA_CACHE_DIR="$TMP/run-cache"
 
 cat > "$TMP/model.qui" <<'QUI'
 import dnn
@@ -15,9 +16,9 @@ int | error run()
         channels = 2,
         seed = 1
     )
-    tensor<float32> input = tensor.ones<float32>([1, 2, 4, 4])
-    tensor<float32> output = block.infer(input)
-    int[] expected_shape = [1, 2, 4, 4]
+    tensor<real32> input = tensor.ones<real32>([1, 2, 4, 4])
+    tensor<real32> output = .block.infer(input)
+    nat[] expected_shape = [1, 2, 4, 4]
     print(output.shape() == expected_shape)
     print(NL)
     return 0

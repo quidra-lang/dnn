@@ -31,7 +31,18 @@ import dnn
 import nn
 
 dnn.model.ResNet18 model = dnn.model.ResNet18()
-nn.Adam optimizer = nn.Adam()
+auto optimizer = nn.Adam(&model, 0.001)
 ```
 
 Core remains unaware of both NN and DNN operation names. Math owns generic numerical semantics; NN owns generic neural-network semantics and acceleration policy; DNN owns architecture composition.
+
+## Errors
+
+DNN errors carry a stable code while preserving their operation-specific
+messages. Errors propagated with `try` from Core, Math or NN retain the
+original provider's code.
+
+| Code | Meaning | Typical message |
+| --- | --- | --- |
+| `DNN_ARGUMENT` | Invalid architecture option, such as a nonpositive block count or an unsupported shortcut stride | `ResNet basic identity stage requires a positive block count` |
+| `DNN_SHAPE` | Input rank, channels or spatial dimensions incompatible with the architecture | `ImageNet reference models require NCHW rank-4 input` |

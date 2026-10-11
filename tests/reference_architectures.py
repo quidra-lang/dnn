@@ -5,6 +5,8 @@ import sys
 
 source_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).parents[1] / "main.qui"
 source = source_path.read_text(encoding="utf-8")
+nn_path = Path(sys.argv[2]) if len(sys.argv) > 2 else source_path.parent.parent / "nn" / "main.qui"
+nn_source = nn_path.read_text(encoding="utf-8")
 
 
 def fail(message: str) -> None:
@@ -13,7 +15,7 @@ def fail(message: str) -> None:
 
 def class_body(name: str) -> str:
     match = re.search(
-        rf"(?ms)^class {re.escape(name)}\n(.*?)(?=^class |\Z)",
+        rf"(?ms)^class {re.escape(name)}\([^\n]*\n(.*?)(?=^class |\Z)",
         source,
     )
     if not match:
@@ -33,9 +35,9 @@ for name in (
     "VGG11", "VGG13", "VGG16", "VGG19",
     "ResNet18", "ResNet34", "ResNet50", "ResNet101", "ResNet152",
 ):
-    if re.search(rf"(?m)^class {re.escape(name)}$", source):
+    if re.search(rf"(?m)^class {re.escape(name)}\(", source):
         fail(f"reference model leaked into dnn root namespace: {name}")
-    if not re.search(rf"(?m)^class model\.{re.escape(name)}$", source):
+    if not re.search(rf"(?m)^class model\.{re.escape(name)}\(", source):
         fail(f"missing model namespace declaration for {name}")
 
 for name in (
@@ -45,28 +47,28 @@ for name in (
     "ResNetBottleneckProjectionBlock", "ResNetBasicIdentityStage",
     "ResNetBasicOptionABlock", "ResNetBasicOptionAStage", "ResNetBottleneckStage",
 ):
-    if re.search(rf"(?m)^class {re.escape(name)}$", source):
+    if re.search(rf"(?m)^class {re.escape(name)}\(", source):
         fail(f"reference helper leaked into dnn root namespace: {name}")
-    if not re.search(rf"(?m)^class model\.{re.escape(name)}$", source):
+    if not re.search(rf"(?m)^class model\.{re.escape(name)}\(", source):
         fail(f"missing model namespace helper declaration for {name}")
 
 # Paper initialization paths.
 for needle in (
-    "tensor<float32> | error normal_weights(",
-    "float log_radius = try math.log(radius_uniform)",
-    "float radius = try math.sqrt(float(-2.0) * log_radius)",
-    "float(6.283185307179586476925286766559005768)",
+    "tensor<real32> | error normal_weights(",
+    "real64 log_radius = try math.log(radius_uniform)",
+    "real64 radius = try math.sqrt(real64(-2.0) * log_radius)",
+    "real64(6.283185307179586476925286766559005768)",
     "* angle_uniform",
     "FC | error normal_fc(",
     "Conv2D | error normal_conv2d(",
 ):
-    require(source, needle, "paper initializer")
+    require(nn_source, needle, "paper initializer")
 
 
 # model.AlexNet: five learned convolution layers, original two-GPU connectivity,
 # 4096/4096/1000 fully-connected widths, LRN, and overlapping 3x3/2 pooling.
 alex = class_body("model.AlexNet")
-if len(re.findall(r"(?m)^    Conv2D conv[1-5]$", alex)) != 5:
+if len(re.findall(r"(?m)^    nn\.Conv2D conv[1-5]$", alex)) != 5:
     fail("model.AlexNet must expose exactly five convolution fields")
 for needle in (
     "normal_conv2d(",
@@ -136,31 +138,31 @@ for name in ("model.VGGA", "model.VGGB", "model.VGGC", "model.VGGD", "model.VGGE
 block_c = class_body("model.VGGBlockC")
 for needle in (
     "normal_conv2d(",
-    "channels_in, channels_out, 3, math.sqrt(float(0.01))",
-    "channels_out, channels_out, 3, math.sqrt(float(0.01))",
-    "channels_out, channels_out, 1, math.sqrt(float(0.01))",
+    "channels_in, channels_out, 3, try math.sqrt(real64(0.01))",
+    "channels_out, channels_out, 3, try math.sqrt(real64(0.01))",
+    "channels_out, channels_out, 1, try math.sqrt(real64(0.01))",
 ):
     require(block_c, needle, "VGG configuration C block")
 
 for name in ("model.VGGBlock1", "model.VGGBlock2", "model.VGGBlock3", "model.VGGBlockC", "model.VGGBlock4"):
     body = class_body(name)
     require(body, "normal_conv2d(", f"{name} paper initialization")
-    require(body, "math.sqrt(float(0.01))", f"{name} paper variance")
+    require(body, "try math.sqrt(real64(0.01))", f"{name} paper variance")
 
 for name in ("model.VGGA", "model.VGGALRN", "model.VGGB", "model.VGGC", "model.VGGD", "model.VGGE"):
     require(
         class_body(name),
-        "weight_standard_deviation = math.sqrt(float(0.01))",
+        "weight_standard_deviation = try math.sqrt(real64(0.01))",
         f"{name} classifier paper variance",
     )
 
 for name in ("model.VGGB", "model.VGGC", "model.VGGD", "model.VGGE"):
     body = class_body(name)
-    require(body, "void initialize_from(model.VGGA source)", f"{name} paper pre-initialization")
+    require(body, "void .initialize_from(model.VGGA source)", f"{name} paper pre-initialization")
     for needle in (
-        "block1.conv1.weight.replace(source.block1.conv1.weight.raw())",
-        "block2.conv1.weight.replace(source.block2.conv1.weight.raw())",
-        "block3.conv1.weight.replace(source.block3.conv1.weight.raw())",
+        ".block1.conv1.weight.replace(source.block1.conv1.weight.raw())",
+        ".block2.conv1.weight.replace(source.block2.conv1.weight.raw())",
+        ".block3.conv1.weight.replace(source.block3.conv1.weight.raw())",
         "block3.conv2.weight.replace(source.block3.conv2.weight.raw())",
         "classifier.fc1.weight.replace(source.classifier.fc1.weight.raw())",
         "classifier.fc2.weight.replace(source.classifier.fc2.weight.raw())",
@@ -175,7 +177,7 @@ for alias, target in aliases.items():
 for alias in ("model.VGG13", "model.VGG16", "model.VGG19"):
     require(
         class_body(alias),
-        "void initialize_from(model.VGG11 source)",
+        "void .initialize_from(model.VGG11 source)",
         f"{alias} net-A transfer alias",
     )
 
@@ -186,9 +188,9 @@ for alias in ("model.VGG13", "model.VGG16", "model.VGG19"):
 identity_stage = class_body("model.ResNetBasicIdentityStage")
 for needle in (
     "model.ResNetBasicBlock[] blocks",
-    "for index in range(count)",
+    "for 0 <= int index < count",
     "seed + index * 2",
-    "for block in blocks",
+    "for auto block = blocks[]",
 ):
     require(identity_stage, needle, "ResNet basic identity stage")
 
@@ -196,9 +198,9 @@ option_a_stage = class_body("model.ResNetBasicOptionAStage")
 for needle in (
     "model.ResNetBasicOptionABlock first",
     "model.ResNetBasicBlock[] blocks",
-    "for index in range(count - 1)",
+    "for 0 <= int index < count - 1",
     "seed + 2 + index * 2",
-    "for block in blocks",
+    "for auto block = blocks[]",
 ):
     require(option_a_stage, needle, "ResNet basic option-A stage")
 
@@ -206,9 +208,9 @@ bottleneck_stage = class_body("model.ResNetBottleneckStage")
 for needle in (
     "model.ResNetBottleneckProjectionBlock first",
     "model.ResNetBottleneckBlock[] blocks",
-    "for index in range(count - 1)",
+    "for 0 <= int index < count - 1",
     "seed + 4 + index * 3",
-    "for block in blocks",
+    "for auto block = blocks[]",
 ):
     require(bottleneck_stage, needle, "ResNet bottleneck stage")
 
@@ -230,7 +232,7 @@ for old_stage in (
     "ResNetBottleneckStage23",
     "ResNetBottleneckStage36",
 ):
-    if re.search(rf"(?m)^class (?:model\.)?{re.escape(old_stage)}$", source):
+    if re.search(rf"(?m)^class (?:model\.)?{re.escape(old_stage)}\(", source):
         fail(f"obsolete expanded stage class remains: {old_stage}")
 
 basic_models = {
@@ -292,13 +294,13 @@ require(projection, "normal_conv2d(", "ResNet-v1 bottleneck initializer")
 require(projection, "channels_in, bottleneck, 1", "ResNet-v1 bottleneck")
 require(projection, "stride = stride, seed = seed", "ResNet-v1 bottleneck")
 require(projection, "channels_in, channels_out, 1", "ResNet-v1 shortcut")
-if "bottleneck, bottleneck, 3,\n            math.sqrt(2.0 / float(bottleneck * 9)),\n            stride = stride" in projection:
+if "bottleneck, bottleneck, 3,\n            try math.sqrt(2.0 / real64(bottleneck * 9)),\n            stride = stride" in projection:
     fail("ResNet-v1 must not use the later v1.5 stride placement")
 
 stem = class_body("model.ResNetStem")
 for needle in (
     "normal_conv2d(",
-    "3, 64, 7, math.sqrt(float(2.0 / 147.0))",
+    "3, 64, 7, try math.sqrt(real64(2.0 / 147.0))",
     "max_pool2d(output, 3, 2, padding = 1)",
 ):
     require(stem, needle, "ResNet stem")
@@ -313,7 +315,8 @@ for name in (
     body = class_body(name)
     require(body, "normal_conv2d(", f"{name} He initialization")
     require(body, "math.sqrt(", f"{name} He variance")
-    require(body, "2.0 /", f"{name} He variance")
+    numerator = "2.0 /" if name == "model.ResNetStem" else "real64(2.0) /"
+    require(body, numerator, f"{name} He variance")
 
 for name, fan_in in (
     ("model.ResNet18", "512.0"),
@@ -324,7 +327,7 @@ for name, fan_in in (
 ):
     body = class_body(name)
     require(body, "normal_fc(", f"{name} final FC He initialization")
-    require(body, f"math.sqrt(float(2.0 / {fan_in}))", f"{name} final FC He variance")
+    require(body, f"try math.sqrt(real64(2.0 / {fan_in}))", f"{name} final FC He variance")
 
 
 print("reference architecture source contracts: ok")
