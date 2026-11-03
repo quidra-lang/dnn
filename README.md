@@ -30,7 +30,7 @@ The implementations compose `nn.*` layers/operations and `math.*` numerical sema
 import dnn
 import nn
 
-dnn.model.ResNet18 model := dnn.model.ResNet18()
+model := dnn.model.ResNet18()
 optimizer := nn.Adam(&model, 0.001)
 ```
 
