@@ -6,7 +6,7 @@ Dependency layers:
 
 ```text
 Layer 1: Core
-Layer 2: Math
+Layer 2: Math / Collections / Text / Encoding
 Layer 3: NN / Vision / Video
 Layer 4: DNN
 ```

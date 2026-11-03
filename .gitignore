@@ -1,4 +1,6 @@
 quidra.lock
+*.qnn
+# Legacy checkpoint files
 *.dnn
 .DS_Store
 quidra/

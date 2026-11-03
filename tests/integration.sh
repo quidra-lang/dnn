@@ -19,8 +19,7 @@ int | error run()
     tensor<real32> input = tensor.ones<real32>([1, 2, 4, 4])
     tensor<real32> output = .block.infer(input)
     nat[] expected_shape = [1, 2, 4, 4]
-    print(output.shape() == expected_shape)
-    print(NL)
+    print.line(output.shape() == expected_shape)
     return 0
 
 auto | error result = run()
@@ -28,8 +27,7 @@ match result
     int
         int ignored = result
     error problem
-        print(problem)
-        print(NL)
+        print.line(problem)
 QUI
 
 out="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/model.qui")"
