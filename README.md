@@ -30,8 +30,8 @@ The implementations compose `nn.*` layers/operations and `math.*` numerical sema
 import dnn
 import nn
 
-dnn.model.ResNet18 model = dnn.model.ResNet18()
-auto optimizer = nn.Adam(&model, 0.001)
+dnn.model.ResNet18 model := dnn.model.ResNet18()
+optimizer := nn.Adam(&model, 0.001)
 ```
 
 Core remains unaware of both NN and DNN operation names. Math owns generic numerical semantics; NN owns generic neural-network semantics and acceleration policy; DNN owns architecture composition.

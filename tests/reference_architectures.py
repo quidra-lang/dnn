@@ -55,8 +55,8 @@ for name in (
 # Paper initialization paths.
 for needle in (
     "tensor<real32> | error normal_weights(",
-    "real64 log_radius = try math.log(radius_uniform)",
-    "real64 radius = try math.sqrt(real64(-2.0) * log_radius)",
+    "real64 log_radius := try math.log(radius_uniform)",
+    "real64 radius := try math.sqrt(real64(-2.0) * log_radius)",
     "real64(6.283185307179586476925286766559005768)",
     "* angle_uniform",
     "FC | error normal_fc(",
@@ -190,7 +190,7 @@ for needle in (
     "model.ResNetBasicBlock[] blocks",
     "for 0 <= int index < count",
     "seed + index * 2",
-    "for auto block = blocks[]",
+    "for block := blocks[]",
 ):
     require(identity_stage, needle, "ResNet basic identity stage")
 
@@ -200,7 +200,7 @@ for needle in (
     "model.ResNetBasicBlock[] blocks",
     "for 0 <= int index < count - 1",
     "seed + 2 + index * 2",
-    "for auto block = blocks[]",
+    "for block := blocks[]",
 ):
     require(option_a_stage, needle, "ResNet basic option-A stage")
 
@@ -210,7 +210,7 @@ for needle in (
     "model.ResNetBottleneckBlock[] blocks",
     "for 0 <= int index < count - 1",
     "seed + 4 + index * 3",
-    "for auto block = blocks[]",
+    "for block := blocks[]",
 ):
     require(bottleneck_stage, needle, "ResNet bottleneck stage")
 

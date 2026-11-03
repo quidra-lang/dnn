@@ -12,20 +12,20 @@ import dnn
 import nn
 
 int | error run()
-    dnn.model.ResNetBasicBlock block = try dnn.model.ResNetBasicBlock(
+    dnn.model.ResNetBasicBlock block := try dnn.model.ResNetBasicBlock(
         channels = 2,
         seed = 1
     )
-    tensor<real32> input = tensor.ones<real32>([1, 2, 4, 4])
-    tensor<real32> output = .block.infer(input)
-    nat[] expected_shape = [1, 2, 4, 4]
+    tensor<real32> input := tensor.ones<real32>([1, 2, 4, 4])
+    tensor<real32> output := .block.infer(input)
+    nat[] expected_shape := [1, 2, 4, 4]
     print.line(output.shape() == expected_shape)
     return 0
 
-auto | error result = run()
+int | error result := run()
 match result
     int
-        int ignored = result
+        int ignored := result
     error problem
         print.line(problem)
 QUI
@@ -55,7 +55,7 @@ fi
 
 cat > "$TMP/no-generic-root.qui" <<'QUI'
 import dnn
-dnn.FC layer = dnn.FC(2, 1)
+dnn.FC layer := dnn.FC(2, 1)
 QUI
 set +e
 QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" check "$TMP/no-generic-root.qui" >"$TMP/no-generic-root.out" 2>&1

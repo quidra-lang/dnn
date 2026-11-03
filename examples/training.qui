@@ -1,9 +1,9 @@
 import dnn
 import nn
 
-dnn.model.ResNet18 | error imagenet_model(int seed = 1)
+dnn.model.ResNet18 | error imagenet_model(int seed := 1)
     return dnn.model.ResNet18(seed)
 
 // Training primitives live in NN; DNN contributes the architecture.
-nn.Adam<M> | error optimizer<M>(M &model, real64 rate = 0.001)
+nn.Adam<M> | error optimizer<M>(M &model, real64 rate := 0.001)
     return try nn.Adam(&model, rate = rate)
