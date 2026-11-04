@@ -630,14 +630,14 @@ class model.ResNetBasicBlock(local int channels, local int seed := 1) | error
     nn.BatchNorm norm1
     nn.Conv2D conv2
     nn.BatchNorm norm2
-    local real64 conv1_scale_denominator := real64(channels * 9)
+    local conv1_scale_denominator := real64(channels * 9)
     conv1 = try nn.normal_conv2d(
         channels, channels, 3,
         try math.sqrt(real64(2.0) / conv1_scale_denominator),
         padding = 1, seed = seed
     )
     norm1 = try nn.BatchNorm(channels)
-    local real64 conv2_scale_denominator := real64(channels * 9)
+    local conv2_scale_denominator := real64(channels * 9)
     conv2 = try nn.normal_conv2d(
         channels, channels, 3,
         try math.sqrt(real64(2.0) / conv2_scale_denominator),
@@ -663,21 +663,21 @@ class model.ResNetBottleneckBlock(local int channels, local int bottleneck, loca
     nn.BatchNorm norm2
     nn.Conv2D conv3
     nn.BatchNorm norm3
-    local real64 conv1_scale_denominator := real64(channels)
+    local conv1_scale_denominator := real64(channels)
     conv1 = try nn.normal_conv2d(
         channels, bottleneck, 1,
         try math.sqrt(real64(2.0) / conv1_scale_denominator),
         seed = seed
     )
     norm1 = try nn.BatchNorm(bottleneck)
-    local real64 conv2_scale_denominator := real64(bottleneck * 9)
+    local conv2_scale_denominator := real64(bottleneck * 9)
     conv2 = try nn.normal_conv2d(
         bottleneck, bottleneck, 3,
         try math.sqrt(real64(2.0) / conv2_scale_denominator),
         padding = 1, seed = seed + 1
     )
     norm2 = try nn.BatchNorm(bottleneck)
-    local real64 conv3_scale_denominator := real64(bottleneck)
+    local conv3_scale_denominator := real64(bottleneck)
     conv3 = try nn.normal_conv2d(
         bottleneck, channels, 1,
         try math.sqrt(real64(2.0) / conv3_scale_denominator),
@@ -709,28 +709,28 @@ class model.ResNetBottleneckProjectionBlock(local int channels_in, local int bot
     nn.BatchNorm shortcut_norm
     // Original ResNet-v1 places the stage-changing stride in the first
     // 1x1 bottleneck convolution (not the later "v1.5" 3x3 placement).
-    local real64 conv1_scale_denominator := real64(channels_in)
+    local conv1_scale_denominator := real64(channels_in)
     conv1 = try nn.normal_conv2d(
         channels_in, bottleneck, 1,
         try math.sqrt(real64(2.0) / conv1_scale_denominator),
         stride = stride, seed = seed
     )
     norm1 = try nn.BatchNorm(bottleneck)
-    local real64 conv2_scale_denominator := real64(bottleneck * 9)
+    local conv2_scale_denominator := real64(bottleneck * 9)
     conv2 = try nn.normal_conv2d(
         bottleneck, bottleneck, 3,
         try math.sqrt(real64(2.0) / conv2_scale_denominator),
         padding = 1, seed = seed + 1
     )
     norm2 = try nn.BatchNorm(bottleneck)
-    local real64 conv3_scale_denominator := real64(bottleneck)
+    local conv3_scale_denominator := real64(bottleneck)
     conv3 = try nn.normal_conv2d(
         bottleneck, channels_out, 1,
         try math.sqrt(real64(2.0) / conv3_scale_denominator),
         seed = seed + 2
     )
     norm3 = try nn.BatchNorm(channels_out)
-    local real64 shortcut_scale_denominator := real64(channels_in)
+    local shortcut_scale_denominator := real64(channels_in)
     shortcut = try nn.normal_conv2d(
         channels_in, channels_out, 1,
         try math.sqrt(real64(2.0) / shortcut_scale_denominator),
@@ -785,14 +785,14 @@ class model.ResNetBasicOptionABlock(local int channels_in, local int channels_ou
     nn.BatchNorm norm2
     int output_channels
     int shortcut_stride
-    local real64 conv1_scale_denominator := real64(channels_in * 9)
+    local conv1_scale_denominator := real64(channels_in * 9)
     conv1 = try nn.normal_conv2d(
         channels_in, channels_out, 3,
         try math.sqrt(real64(2.0) / conv1_scale_denominator),
         stride = stride, padding = 1, seed = seed
     )
     norm1 = try nn.BatchNorm(channels_out)
-    local real64 conv2_scale_denominator := real64(channels_out * 9)
+    local conv2_scale_denominator := real64(channels_out * 9)
     conv2 = try nn.normal_conv2d(
         channels_out, channels_out, 3,
         try math.sqrt(real64(2.0) / conv2_scale_denominator),
