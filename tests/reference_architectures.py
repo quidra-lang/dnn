@@ -56,7 +56,7 @@ for name in (
 for needle in (
     "tensor<real32> | error normal_weights(",
     "real64 log_radius := try math.log(radius_uniform)",
-    "real64 radius := try math.sqrt(real64(-2.0) * log_radius)",
+    "radius := try math.sqrt(real64(-2.0) * log_radius)",
     "real64(6.283185307179586476925286766559005768)",
     "* angle_uniform",
     "FC | error normal_fc(",
@@ -315,7 +315,7 @@ for name in (
     body = class_body(name)
     require(body, "normal_conv2d(", f"{name} He initialization")
     require(body, "math.sqrt(", f"{name} He variance")
-    numerator = "2.0 /" if name == "model.ResNetStem" else "real64(2.0) /"
+    numerator = "2.0 /"
     require(body, numerator, f"{name} He variance")
 
 for name, fan_in in (
