@@ -188,7 +188,7 @@ for alias in ("model.VGG13", "model.VGG16", "model.VGG19"):
 identity_stage = class_body("model.ResNetBasicIdentityStage")
 for needle in (
     "model.ResNetBasicBlock[] blocks",
-    "for 0 <= int index < count",
+    "for: 0 <= int index < count",
     "seed + index * 2",
     "for block := blocks[]",
 ):
@@ -198,7 +198,7 @@ option_a_stage = class_body("model.ResNetBasicOptionAStage")
 for needle in (
     "model.ResNetBasicOptionABlock first",
     "model.ResNetBasicBlock[] blocks",
-    "for 0 <= int index < count - 1",
+    "for: 0 <= int index < count - 1",
     "seed + 2 + index * 2",
     "for block := blocks[]",
 ):
@@ -208,7 +208,7 @@ bottleneck_stage = class_body("model.ResNetBottleneckStage")
 for needle in (
     "model.ResNetBottleneckProjectionBlock first",
     "model.ResNetBottleneckBlock[] blocks",
-    "for 0 <= int index < count - 1",
+    "for: 0 <= int index < count - 1",
     "seed + 4 + index * 3",
     "for block := blocks[]",
 ):

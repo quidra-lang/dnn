@@ -758,7 +758,7 @@ class model.ResNetBasicIdentityStage(local int channels, local int count, local 
     if count <= 0
         return error("ResNet basic identity stage requires a positive block count", code = "DNN_ARGUMENT")
     blocks = []
-    for 0 <= int index < count
+    for: 0 <= int index < count
         blocks = blocks.append(
             try model.ResNetBasicBlock(channels, seed + index * 2)
         )
@@ -832,7 +832,7 @@ class model.ResNetBasicOptionAStage(local int channels_in, local int channels_ou
         channels_in, channels_out, 2, seed
     )
     blocks = []
-    for 0 <= int index < count - 1
+    for: 0 <= int index < count - 1
         blocks = blocks.append(
             try model.ResNetBasicBlock(
                 channels_out, seed + 2 + index * 2
@@ -861,7 +861,7 @@ class model.ResNetBottleneckStage(local int channels_in, local int bottleneck, l
         channels_in, bottleneck, channels_out, stride, seed
     )
     blocks = []
-    for 0 <= int index < count - 1
+    for: 0 <= int index < count - 1
         blocks = blocks.append(
             try model.ResNetBottleneckBlock(
                 channels_out, bottleneck, seed + 4 + index * 3

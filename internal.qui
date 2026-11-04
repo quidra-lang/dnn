@@ -30,7 +30,7 @@ tensor<real32> resnet_option_a_shortcut(
     count := batches * channels_in * output_height * output_width
     source_indices := array(nat(count), fill = 0)
     destination_indices := array(nat(count), fill = 0)
-    for 0 <= int flat_index < count
+    for: 0 <= int flat_index < count
         output_x := flat_index % output_width
         remaining := flat_index / output_width
         output_y := remaining % output_height
