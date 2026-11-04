@@ -6,7 +6,7 @@ import internal = "./internal.qui"
 // Reusable layers, activations, losses, optimizers, persistence, distributed
 // training, native kernels, and compiler fusion policy are owned by NN.
 
-class model.ImageNetFC4096(local int features_in, local int seed := 1, local real64 weight_standard_deviation := 0.01, local real64 hidden_bias := 0.0) | error
+class model.ImageNetFC4096(local int features_in, local seed := 1, local real64 weight_standard_deviation := 0.01, local real64 hidden_bias := 0.0) | error
 
     nn.FC fc1
     nn.FC fc2
@@ -38,7 +38,7 @@ class model.ImageNetFC4096(local int features_in, local int seed := 1, local rea
         output = dropout2.infer(nn.relu(.fc2.forward(output)))
         return .fc3.forward(output)
 
-class model.AlexNet(local int seed := 1) | error
+class model.AlexNet(local seed := 1) | error
 
     nn.Conv2D conv1
     nn.Conv2D conv2
@@ -98,7 +98,7 @@ class model.AlexNet(local int seed := 1) | error
     tensor<real32> .probabilities(tensor<real32> value)
         return nn.softmax(.infer(value))
 
-class model.VGGBlock1(local int channels_in, local int channels_out, local int seed := 1) | error
+class model.VGGBlock1(local int channels_in, local int channels_out, local seed := 1) | error
 
     nn.Conv2D conv1
     conv1 = try nn.normal_conv2d(
@@ -111,7 +111,7 @@ class model.VGGBlock1(local int channels_in, local int channels_out, local int s
         output = nn.relu(.conv1.forward(output))
         return output
 
-class model.VGGBlock2(local int channels_in, local int channels_out, local int seed := 1) | error
+class model.VGGBlock2(local int channels_in, local int channels_out, local seed := 1) | error
 
     nn.Conv2D conv1
     nn.Conv2D conv2
@@ -130,7 +130,7 @@ class model.VGGBlock2(local int channels_in, local int channels_out, local int s
         output = nn.relu(.conv2.forward(output))
         return output
 
-class model.VGGBlock3(local int channels_in, local int channels_out, local int seed := 1) | error
+class model.VGGBlock3(local int channels_in, local int channels_out, local seed := 1) | error
 
     nn.Conv2D conv1
     nn.Conv2D conv2
@@ -155,7 +155,7 @@ class model.VGGBlock3(local int channels_in, local int channels_out, local int s
         output = nn.relu(.conv3.forward(output))
         return output
 
-class model.VGGBlockC(local int channels_in, local int channels_out, local int seed := 1) | error
+class model.VGGBlockC(local int channels_in, local int channels_out, local seed := 1) | error
 
     nn.Conv2D conv1
     nn.Conv2D conv2
@@ -180,7 +180,7 @@ class model.VGGBlockC(local int channels_in, local int channels_out, local int s
         output = nn.relu(.conv3.forward(output))
         return output
 
-class model.VGGBlock4(local int channels_in, local int channels_out, local int seed := 1) | error
+class model.VGGBlock4(local int channels_in, local int channels_out, local seed := 1) | error
 
     nn.Conv2D conv1
     nn.Conv2D conv2
@@ -211,7 +211,7 @@ class model.VGGBlock4(local int channels_in, local int channels_out, local int s
         output = nn.relu(.conv4.forward(output))
         return output
 
-class model.VGGA(local int seed := 1) | error
+class model.VGGA(local seed := 1) | error
 
     model.VGGBlock1 block1
     model.VGGBlock1 block2
@@ -253,7 +253,7 @@ class model.VGGA(local int seed := 1) | error
     tensor<real32> .probabilities(tensor<real32> value)
         return nn.softmax(.infer(value))
 
-class model.VGGALRN(local int seed := 1) | error
+class model.VGGALRN(local seed := 1) | error
 
     model.VGGBlock1 block1
     model.VGGBlock1 block2
@@ -296,7 +296,7 @@ class model.VGGALRN(local int seed := 1) | error
     tensor<real32> .probabilities(tensor<real32> value)
         return nn.softmax(.infer(value))
 
-class model.VGGB(local int seed := 1) | error
+class model.VGGB(local seed := 1) | error
 
     model.VGGBlock2 block1
     model.VGGBlock2 block2
@@ -357,7 +357,7 @@ class model.VGGB(local int seed := 1) | error
     tensor<real32> .probabilities(tensor<real32> value)
         return nn.softmax(.infer(value))
 
-class model.VGGC(local int seed := 1) | error
+class model.VGGC(local seed := 1) | error
 
     model.VGGBlock2 block1
     model.VGGBlock2 block2
@@ -418,7 +418,7 @@ class model.VGGC(local int seed := 1) | error
     tensor<real32> .probabilities(tensor<real32> value)
         return nn.softmax(.infer(value))
 
-class model.VGGD(local int seed := 1) | error
+class model.VGGD(local seed := 1) | error
 
     model.VGGBlock2 block1
     model.VGGBlock2 block2
@@ -479,7 +479,7 @@ class model.VGGD(local int seed := 1) | error
     tensor<real32> .probabilities(tensor<real32> value)
         return nn.softmax(.infer(value))
 
-class model.VGGE(local int seed := 1) | error
+class model.VGGE(local seed := 1) | error
 
     model.VGGBlock2 block1
     model.VGGBlock2 block2
@@ -540,7 +540,7 @@ class model.VGGE(local int seed := 1) | error
     tensor<real32> .probabilities(tensor<real32> value)
         return nn.softmax(.infer(value))
 
-class model.VGG11(local int seed := 1) | error
+class model.VGG11(local seed := 1) | error
 
     model.VGGA network
     network = try model.VGGA(seed)
@@ -554,7 +554,7 @@ class model.VGG11(local int seed := 1) | error
     tensor<real32> .probabilities(tensor<real32> value)
         return .network.probabilities(value)
 
-class model.VGG13(local int seed := 1) | error
+class model.VGG13(local seed := 1) | error
 
     model.VGGB network
     network = try model.VGGB(seed)
@@ -571,7 +571,7 @@ class model.VGG13(local int seed := 1) | error
     tensor<real32> .probabilities(tensor<real32> value)
         return .network.probabilities(value)
 
-class model.VGG16(local int seed := 1) | error
+class model.VGG16(local seed := 1) | error
 
     model.VGGD network
     network = try model.VGGD(seed)
@@ -588,7 +588,7 @@ class model.VGG16(local int seed := 1) | error
     tensor<real32> .probabilities(tensor<real32> value)
         return .network.probabilities(value)
 
-class model.VGG19(local int seed := 1) | error
+class model.VGG19(local seed := 1) | error
 
     model.VGGE network
     network = try model.VGGE(seed)
@@ -606,7 +606,7 @@ class model.VGG19(local int seed := 1) | error
         return .network.probabilities(value)
 
 
-class model.ResNetStem(local int seed := 1) | error
+class model.ResNetStem(local seed := 1) | error
 
     nn.Conv2D conv
     nn.BatchNorm norm
@@ -624,7 +624,7 @@ class model.ResNetStem(local int seed := 1) | error
         output := nn.relu(.norm.infer(.conv.forward(value)))
         return nn.max_pool2d(output, 3, 2, padding = 1)
 
-class model.ResNetBasicBlock(local int channels, local int seed := 1) | error
+class model.ResNetBasicBlock(local int channels, local seed := 1) | error
 
     nn.Conv2D conv1
     nn.BatchNorm norm1
@@ -655,7 +655,7 @@ class model.ResNetBasicBlock(local int channels, local int seed := 1) | error
         residual = .norm2.infer(.conv2.forward(residual))
         return nn.relu(residual + value)
 
-class model.ResNetBottleneckBlock(local int channels, local int bottleneck, local int seed := 1) | error
+class model.ResNetBottleneckBlock(local int channels, local int bottleneck, local seed := 1) | error
 
     nn.Conv2D conv1
     nn.BatchNorm norm1
@@ -697,7 +697,7 @@ class model.ResNetBottleneckBlock(local int channels, local int bottleneck, loca
         residual = .norm3.infer(.conv3.forward(residual))
         return nn.relu(residual + value)
 
-class model.ResNetBottleneckProjectionBlock(local int channels_in, local int bottleneck, local int channels_out, local int stride, local int seed := 1) | error
+class model.ResNetBottleneckProjectionBlock(local int channels_in, local int bottleneck, local int channels_out, local int stride, local seed := 1) | error
 
     nn.Conv2D conv1
     nn.BatchNorm norm1
@@ -752,7 +752,7 @@ class model.ResNetBottleneckProjectionBlock(local int channels_in, local int bot
         identity := .shortcut_norm.infer(.shortcut.forward(value))
         return nn.relu(residual + identity)
 
-class model.ResNetBasicIdentityStage(local int channels, local int count, local int seed := 1) | error
+class model.ResNetBasicIdentityStage(local int channels, local int count, local seed := 1) | error
 
     model.ResNetBasicBlock[] blocks
     if count <= 0
@@ -777,7 +777,7 @@ class model.ResNetBasicIdentityStage(local int channels, local int count, local 
 
 
 
-class model.ResNetBasicOptionABlock(local int channels_in, local int channels_out, local int stride, local int seed := 1) | error
+class model.ResNetBasicOptionABlock(local int channels_in, local int channels_out, local int stride, local seed := 1) | error
 
     nn.Conv2D conv1
     nn.BatchNorm norm1
@@ -822,7 +822,7 @@ class model.ResNetBasicOptionABlock(local int channels_in, local int channels_ou
         )
         return nn.relu(residual + identity)
 
-class model.ResNetBasicOptionAStage(local int channels_in, local int channels_out, local int count, local int seed := 1) | error
+class model.ResNetBasicOptionAStage(local int channels_in, local int channels_out, local int count, local seed := 1) | error
 
     model.ResNetBasicOptionABlock first
     model.ResNetBasicBlock[] blocks
@@ -851,7 +851,7 @@ class model.ResNetBasicOptionAStage(local int channels_in, local int channels_ou
             output = .block.infer(output)
         return output
 
-class model.ResNetBottleneckStage(local int channels_in, local int bottleneck, local int channels_out, local int count, local int stride, local int seed := 1) | error
+class model.ResNetBottleneckStage(local int channels_in, local int bottleneck, local int channels_out, local int count, local int stride, local seed := 1) | error
 
     model.ResNetBottleneckProjectionBlock first
     model.ResNetBottleneckBlock[] blocks
@@ -880,7 +880,7 @@ class model.ResNetBottleneckStage(local int channels_in, local int bottleneck, l
             output = .block.infer(output)
         return output
 
-class model.ResNet18(local int seed := 1) | error
+class model.ResNet18(local seed := 1) | error
 
     model.ResNetStem stem
     model.ResNetBasicIdentityStage conv2_x
@@ -919,7 +919,7 @@ class model.ResNet18(local int seed := 1) | error
     tensor<real32> .probabilities(tensor<real32> value)
         return nn.softmax(.infer(value))
 
-class model.ResNet34(local int seed := 1) | error
+class model.ResNet34(local seed := 1) | error
 
     model.ResNetStem stem
     model.ResNetBasicIdentityStage conv2_x
@@ -958,7 +958,7 @@ class model.ResNet34(local int seed := 1) | error
     tensor<real32> .probabilities(tensor<real32> value)
         return nn.softmax(.infer(value))
 
-class model.ResNet50(local int seed := 1) | error
+class model.ResNet50(local seed := 1) | error
 
     model.ResNetStem stem
     model.ResNetBottleneckStage conv2_x
@@ -997,7 +997,7 @@ class model.ResNet50(local int seed := 1) | error
     tensor<real32> .probabilities(tensor<real32> value)
         return nn.softmax(.infer(value))
 
-class model.ResNet101(local int seed := 1) | error
+class model.ResNet101(local seed := 1) | error
 
     model.ResNetStem stem
     model.ResNetBottleneckStage conv2_x
@@ -1036,7 +1036,7 @@ class model.ResNet101(local int seed := 1) | error
     tensor<real32> .probabilities(tensor<real32> value)
         return nn.softmax(.infer(value))
 
-class model.ResNet152(local int seed := 1) | error
+class model.ResNet152(local seed := 1) | error
 
     model.ResNetStem stem
     model.ResNetBottleneckStage conv2_x
