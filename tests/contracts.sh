@@ -52,7 +52,7 @@ match stage
         print(false)
     error problem
         print(problem.code == "DNN_ARGUMENT")
-print.line()
+println()
 QUI
 code_output="$(QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/architecture-error.qui")"
 if [[ "$code_output" != "true" ]]; then
@@ -74,7 +74,7 @@ int | error exercise_shape_guard()
     return 0
 
 result := exercise_shape_guard()
-print.line(result)
+println(result)
 QUI
 set +e
 QUIDRA_PACKAGE_PATH="$PACKAGE_ROOT" "$QUIDRA" "$TMP/option-a-shape-error.qui" >"$TMP/option-a-shape-error.out" 2>"$TMP/option-a-shape-error.err"
