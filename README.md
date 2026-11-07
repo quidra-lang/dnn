@@ -36,6 +36,8 @@ optimizer := nn.Adam(&model, 0.001)
 
 Core remains unaware of both NN and DNN operation names. Math owns generic numerical semantics; NN owns generic neural-network semantics and acceleration policy; DNN owns architecture composition.
 
+On `develop`, `#value` is the ordinary zero-argument `value.len()` call. It also works automatically for custom classes and visible extensions that provide `len`; return types, errors and access/effect checks are unchanged. Standard array, string and binary lengths remain `nat`.
+
 ## Errors
 
 DNN errors carry a stable code while preserving their operation-specific
